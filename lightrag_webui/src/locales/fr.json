@@ -17,7 +17,8 @@
     "themeToggle": {
       "switchToLight": "Passer au thème clair",
       "switchToDark": "Passer au thème sombre"
-    }
+    },
+    "csvGenerator": "CSV"
   },
   "login": {
     "description": "Veuillez entrer votre compte et mot de passe pour vous connecter au système",
@@ -461,5 +462,22 @@
     "prevPage": "Page précédente",
     "nextPage": "Page suivante",
     "lastPage": "Dernière page"
+  },
+  "csvGenerator": {
+    "title": "CSV Generator",
+    "templateLabel": "Template",
+    "templatePlaceholder": "Select template",
+    "customColumnsLabel": "Custom Columns (comma-separated)",
+    "customColumnsPlaceholder": "colA, colB, colC",
+    "limitLabel": "Row limit",
+    "previewButton": "Preview",
+    "downloadButton": "Download CSV",
+    "loadingMessage": "Loading…",
+    "emptyState": "No preview yet. Click Preview to fetch sample rows.",
+    "errors": {
+      "loadTemplates": "Failed to load CSV templates.",
+      "previewFailed": "Failed to load preview.",
+      "downloadFailed": "Failed to download CSV."
+    }
   }
 }
