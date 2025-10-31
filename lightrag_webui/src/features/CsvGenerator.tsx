@@ -155,8 +155,8 @@ export default function CsvGenerator() {
       {/* Top split card (grows to fill remaining height) */}
       <Card className="p-4 row-start-2 row-end-3 h-full">
         <div className="grid h-full grid-cols-1 gap-4 md:grid-cols-3">
-          {/* Left pane: controls + buttons */}
-          <div className="flex flex-col gap-4">
+          {/* Left pane: controls + buttons + fixed error row */}
+          <div className="min-h-0 grid grid-rows-[auto,auto,auto,1fr,auto,auto] gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">{t('csvGenerator.templateLabel')}</label>
               <Select value={template} onValueChange={setTemplate}>
@@ -194,7 +194,10 @@ export default function CsvGenerator() {
               />
             </div>
 
-            {/* Buttons: aligned to the left */}
+            {/* spacer fills extra space so buttons stay at bottom */}
+            <div />
+
+            {/* Buttons: left-aligned, pinned to bottom of left pane */}
             <div className="mt-auto flex flex-wrap gap-2">
               <Button onClick={handlePreview} disabled={loading || disableCustomActions}>
                 {t('csvGenerator.previewButton')}
@@ -208,7 +211,13 @@ export default function CsvGenerator() {
               </Button>
             </div>
 
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            {/* Fixed-height error slot prevents layout shift */}
+            <p
+              aria-live="polite"
+              className="h-5 text-sm text-destructive"
+            >
+              {error || '\u00A0'}
+            </p>
           </div>
 
           {/* Right pane: label + stretchy Textarea */}
@@ -218,7 +227,6 @@ export default function CsvGenerator() {
               placeholder={t('csvGenerator.promptPlaceholder') ?? undefined}
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              // Fill available column height; keep some minimum so it’s usable on small screens
               className="flex-1 h-auto min-h-40 resize-vertical"
             />
           </div>
