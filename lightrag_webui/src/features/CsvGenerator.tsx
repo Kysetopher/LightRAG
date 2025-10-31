@@ -150,76 +150,83 @@ export default function CsvGenerator() {
   }
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-4 p-4">
-      <h1 className="text-xl font-semibold">{t('csvGenerator.title')}</h1>
+    <div className="mx-auto grid max-w-6xl grid-rows-[auto,1fr,auto] gap-4 p-4 min-h-screen">
 
-      <Card className="space-y-4 p-4">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div className="space-y-2">
-            <label className="text-sm font-medium">{t('csvGenerator.templateLabel')}</label>
-            <Select value={template} onValueChange={setTemplate}>
-              <SelectTrigger>
-                <SelectValue placeholder={t('csvGenerator.templatePlaceholder')} />
-              </SelectTrigger>
-              <SelectContent>
-                {templates.map((item) => (
-                  <SelectItem key={item.id} value={item.id}>
-                    {item.id}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+      {/* Top split card (grows to fill remaining height) */}
+      <Card className="p-4 row-start-2 row-end-3 h-full">
+        <div className="grid h-full grid-cols-1 gap-4 md:grid-cols-3">
+          {/* Left pane: controls + buttons */}
+          <div className="flex flex-col gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t('csvGenerator.templateLabel')}</label>
+              <Select value={template} onValueChange={setTemplate}>
+                <SelectTrigger>
+                  <SelectValue placeholder={t('csvGenerator.templatePlaceholder')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {templates.map((item) => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {item.id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {template === 'custom' && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">{t('csvGenerator.customColumnsLabel')}</label>
+                <Input
+                  placeholder={t('csvGenerator.customColumnsPlaceholder')}
+                  value={customColumns}
+                  onChange={(e) => setCustomColumns(e.target.value)}
+                />
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t('csvGenerator.limitLabel')}</label>
+              <Input
+                type="number"
+                min={1}
+                value={limit}
+                onChange={(e) => setLimit(e.target.value)}
+              />
+            </div>
+
+            {/* Buttons: aligned to the left */}
+            <div className="mt-auto flex flex-wrap gap-2">
+              <Button onClick={handlePreview} disabled={loading || disableCustomActions}>
+                {t('csvGenerator.previewButton')}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleDownload}
+                disabled={loading || disableCustomActions}
+              >
+                {t('csvGenerator.downloadButton')}
+              </Button>
+            </div>
+
+            {error && <p className="text-sm text-destructive">{error}</p>}
           </div>
 
-          <div className="space-y-2 md:col-span-2">
-            <label className="text-sm font-medium">{t('csvGenerator.promptLabel')}</label>
+          {/* Right pane: label + stretchy Textarea */}
+          <div className="md:col-span-2 flex min-h-0 flex-col">
+            <label className="mb-2 text-sm font-medium">{t('csvGenerator.promptLabel')}</label>
             <Textarea
               placeholder={t('csvGenerator.promptPlaceholder') ?? undefined}
               value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-              rows={template === 'custom' ? 5 : 3}
-            />
-          </div>
-
-          {template === 'custom' && (
-            <div className="space-y-2 md:col-span-2">
-              <label className="text-sm font-medium">{t('csvGenerator.customColumnsLabel')}</label>
-              <Input
-                placeholder={t('csvGenerator.customColumnsPlaceholder')}
-                value={customColumns}
-                onChange={(event) => setCustomColumns(event.target.value)}
-              />
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">{t('csvGenerator.limitLabel')}</label>
-            <Input
-              type="number"
-              min={1}
-              value={limit}
-              onChange={(event) => setLimit(event.target.value)}
+              onChange={(e) => setPrompt(e.target.value)}
+              // Fill available column height; keep some minimum so it’s usable on small screens
+              className="flex-1 h-auto min-h-40 resize-vertical"
             />
           </div>
         </div>
-
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={handlePreview} disabled={loading || disableCustomActions}>
-            {t('csvGenerator.previewButton')}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={handleDownload}
-            disabled={loading || disableCustomActions}
-          >
-            {t('csvGenerator.downloadButton')}
-          </Button>
-        </div>
-
-        {error && <p className="text-sm text-destructive">{error}</p>}
       </Card>
 
-      <Card className="p-4">
+      {/* Bottom card: data table (auto height) */}
+      <Card className="p-4 row-start-3 row-end-4">
         {loading ? (
           <div className="p-6 text-sm text-muted-foreground">
             {t('csvGenerator.loadingMessage')}
