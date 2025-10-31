@@ -403,6 +403,7 @@ export const listCsvTemplates = async (): Promise<CsvTemplateInfo[]> => {
 export const generateCsv = async (body: {
   workspace?: string | null
   template: string
+  prompt?: string
   columns?: string[]
   filters?: Record<string, any>
   limit?: number

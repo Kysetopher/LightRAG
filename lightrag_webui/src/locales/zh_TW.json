@@ -467,6 +467,8 @@
     "title": "CSV Generator",
     "templateLabel": "Template",
     "templatePlaceholder": "Select template",
+    "promptLabel": "Document instructions",
+    "promptPlaceholder": "Describe the document goal for the agent",
     "customColumnsLabel": "Custom Columns (comma-separated)",
     "customColumnsPlaceholder": "colA, colB, colC",
     "limitLabel": "Row limit",
