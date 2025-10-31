@@ -23,6 +23,10 @@ class CsvRequest(BaseModel):
         description="Optional workspace identifier when running multi-workspace setups.",
     )
     template: str = Field(..., min_length=1, description="The preset template identifier.")
+    prompt: Optional[str] = Field(
+        default=None,
+        description="Optional natural-language instructions describing the desired document.",
+    )
     columns: Optional[List[str]] = Field(
         default=None,
         description="Custom column list when using the 'custom' template.",
@@ -108,6 +112,12 @@ def create_csv_routes(_rag, api_key: Optional[str] = None):  # pragma: no cover 
         """
 
         rows: List[Dict[str, Any]] = []
+        raw_prompt = req.prompt.strip() if req.prompt and req.prompt.strip() else None
+        prompt_note = (
+            f"Generated based on instructions: {raw_prompt}"
+            if raw_prompt
+            else None
+        )
 
         if req.template == "fmea":
             for index in range(1, 4):
@@ -123,7 +133,7 @@ def create_csv_routes(_rag, api_key: Optional[str] = None):  # pragma: no cover 
                         "Current Controls": "Visual, Helium Test",
                         "D": 6,
                         "RPN": 8 * 5 * 6,
-                        "Action Owner": "Chris",
+                        "Action Owner": "Chris" if not raw_prompt else f"Chris — {raw_prompt}",
                         "Target Date": "2025-11-15",
                     }
                 )
@@ -135,7 +145,11 @@ def create_csv_routes(_rag, api_key: Optional[str] = None):  # pragma: no cover 
                     "Specification/Tolerance": "Ø10.00 ±0.05 mm",
                     "Measurement Method": "Go/No-Go",
                     "Sample Size/Frequency": "1/Hour",
-                    "Reaction Plan": "Stop line if fail",
+                    "Reaction Plan": (
+                        "Stop line if fail"
+                        if not raw_prompt
+                        else f"Stop line if fail — {raw_prompt}"
+                    ),
                     "Responsibility": "Operator",
                 }
             )
@@ -147,7 +161,7 @@ def create_csv_routes(_rag, api_key: Optional[str] = None):  # pragma: no cover 
                     "Input": "Bar",
                     "Output": "Blank",
                     "Equipment": "Saw",
-                    "Notes": "",
+                    "Notes": prompt_note or "",
                 },
                 {
                     "Step #": 20,
@@ -168,12 +182,18 @@ def create_csv_routes(_rag, api_key: Optional[str] = None):  # pragma: no cover 
                     "Submission Level": "3",
                     "Requirement": "Dimensional Report",
                     "Status": "Submitted",
-                    "Comments": "Awaiting approval",
+                    "Comments": (
+                        "Awaiting approval"
+                        if not raw_prompt
+                        else f"Awaiting approval — {raw_prompt}"
+                    ),
                 }
             )
         else:
             columns = req.columns or []
             rows = [{column: "" for column in columns}]
+            if prompt_note and columns:
+                rows[0][columns[0]] = prompt_note
 
         return rows
 

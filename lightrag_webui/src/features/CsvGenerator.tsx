@@ -7,6 +7,7 @@ import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import { Card } from '@/components/ui/Card'
 import DataTable from '@/components/ui/DataTable'
+import Textarea from '@/components/ui/Textarea'
 import {
   Select,
   SelectContent,
@@ -27,6 +28,7 @@ export default function CsvGenerator() {
   const [template, setTemplate] = useState<string>('fmea')
   const [customColumns, setCustomColumns] = useState<string>('')
   const [limit, setLimit] = useState<string>('1000')
+  const [prompt, setPrompt] = useState<string>('')
   const [previewRows, setPreviewRows] = useState<RowData[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -85,7 +87,7 @@ export default function CsvGenerator() {
   useEffect(() => {
     setPreviewRows([])
     setError(null)
-  }, [template, customColumns])
+  }, [template, customColumns, prompt])
 
   const handlePreview = async () => {
     setLoading(true)
@@ -94,6 +96,7 @@ export default function CsvGenerator() {
       const blob = await generateCsv({
         workspace: workspace || undefined,
         template,
+        prompt: prompt.trim() ? prompt : undefined,
         columns: template === 'custom' ? columns : undefined,
         limit: 50
       })
@@ -128,6 +131,7 @@ export default function CsvGenerator() {
       const blob = await generateCsv({
         workspace: workspace || undefined,
         template,
+        prompt: prompt.trim() ? prompt : undefined,
         columns: template === 'custom' ? columns : undefined,
         limit: limitValue
       })
@@ -165,6 +169,16 @@ export default function CsvGenerator() {
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-2 md:col-span-2">
+            <label className="text-sm font-medium">{t('csvGenerator.promptLabel')}</label>
+            <Textarea
+              placeholder={t('csvGenerator.promptPlaceholder') ?? undefined}
+              value={prompt}
+              onChange={(event) => setPrompt(event.target.value)}
+              rows={template === 'custom' ? 5 : 3}
+            />
           </div>
 
           {template === 'custom' && (
