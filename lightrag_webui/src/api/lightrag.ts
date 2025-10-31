@@ -143,6 +143,11 @@ export type QueryResponse = {
   response: string
 }
 
+export type CsvTemplateInfo = {
+  id: string
+  columns: string[]
+}
+
 export type EntityUpdateResponse = {
   status: string
   message: string
@@ -387,6 +392,22 @@ export const getDocumentsScanProgress = async (): Promise<LightragDocumentsScanP
 
 export const queryText = async (request: QueryRequest): Promise<QueryResponse> => {
   const response = await axiosInstance.post('/query', request)
+  return response.data
+}
+
+export const listCsvTemplates = async (): Promise<CsvTemplateInfo[]> => {
+  const response = await axiosInstance.get<{ templates: CsvTemplateInfo[] }>('/csv/templates')
+  return response.data.templates
+}
+
+export const generateCsv = async (body: {
+  workspace?: string | null
+  template: string
+  columns?: string[]
+  filters?: Record<string, any>
+  limit?: number
+}): Promise<Blob> => {
+  const response = await axiosInstance.post<Blob>('/csv/generate', body, { responseType: 'blob' })
   return response.data
 }
 

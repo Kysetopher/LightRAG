@@ -17,7 +17,8 @@
     "themeToggle": {
       "switchToLight": "切换到浅色主题",
       "switchToDark": "切换到深色主题"
-    }
+    },
+    "csvGenerator": "CSV"
   },
   "login": {
     "description": "请输入您的账号和密码登录系统",
@@ -461,5 +462,22 @@
     "prevPage": "上一页",
     "nextPage": "下一页",
     "lastPage": "末页"
+  },
+  "csvGenerator": {
+    "title": "CSV Generator",
+    "templateLabel": "Template",
+    "templatePlaceholder": "Select template",
+    "customColumnsLabel": "Custom Columns (comma-separated)",
+    "customColumnsPlaceholder": "colA, colB, colC",
+    "limitLabel": "Row limit",
+    "previewButton": "Preview",
+    "downloadButton": "Download CSV",
+    "loadingMessage": "Loading…",
+    "emptyState": "No preview yet. Click Preview to fetch sample rows.",
+    "errors": {
+      "loadTemplates": "Failed to load CSV templates.",
+      "previewFailed": "Failed to load preview.",
+      "downloadFailed": "Failed to download CSV."
+    }
   }
 }

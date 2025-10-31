@@ -17,7 +17,8 @@
     "themeToggle": {
       "switchToLight": "التحويل إلى السمة الفاتحة",
       "switchToDark": "التحويل إلى السمة الداكنة"
-    }
+    },
+    "csvGenerator": "CSV"
   },
   "login": {
     "description": "الرجاء إدخال حسابك وكلمة المرور لتسجيل الدخول إلى النظام",
@@ -461,5 +462,22 @@
     "prevPage": "الصفحة السابقة",
     "nextPage": "الصفحة التالية",
     "lastPage": "الصفحة الأخيرة"
+  },
+  "csvGenerator": {
+    "title": "CSV Generator",
+    "templateLabel": "Template",
+    "templatePlaceholder": "Select template",
+    "customColumnsLabel": "Custom Columns (comma-separated)",
+    "customColumnsPlaceholder": "colA, colB, colC",
+    "limitLabel": "Row limit",
+    "previewButton": "Preview",
+    "downloadButton": "Download CSV",
+    "loadingMessage": "Loading…",
+    "emptyState": "No preview yet. Click Preview to fetch sample rows.",
+    "errors": {
+      "loadTemplates": "Failed to load CSV templates.",
+      "previewFailed": "Failed to load preview.",
+      "downloadFailed": "Failed to download CSV."
+    }
   }
 }
