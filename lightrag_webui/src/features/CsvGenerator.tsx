@@ -150,10 +150,10 @@ export default function CsvGenerator() {
   }
 
   return (
-    <div className=" grid gap-4 p-4 ">
+    <div className="grid gap-4 p-4 ">
 
       {/* Top split card (grows to fill remaining height) */}
-      <Card className="p-4 row-start-2 row-end-3 h-full">
+      <Card className="p-4">
         <div className="grid h-full grid-cols-1 gap-4 md:grid-cols-3">
           {/* Left pane: controls + buttons + fixed error row */}
           <div className="min-h-0 grid grid-rows-[auto,auto,auto,1fr,auto,auto] gap-4">
@@ -234,7 +234,7 @@ export default function CsvGenerator() {
       </Card>
 
       {/* Bottom card: data table (auto height) */}
-      <div className='row-start-3 row-end-4 overflow-auto'>
+      <div className='overflow-auto'>
         {loading ? (
           <Card className="p-6 text-sm text-muted-foreground">
             {t('csvGenerator.loadingMessage')}
