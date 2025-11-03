@@ -155,7 +155,6 @@ def create_csv_routes(_rag, api_key: Optional[str] = None):  # pragma: no cover 
         response = await _rag.llm_model_func(  # type: ignore[func-returns-value]
             prompt,
             system_prompt=system_prompt,
-            stream=False,
             response_format=schema_model,
         )
 
