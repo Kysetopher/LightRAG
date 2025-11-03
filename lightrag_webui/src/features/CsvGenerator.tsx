@@ -221,7 +221,7 @@ export default function CsvGenerator() {
           </div>
 
           {/* Right pane: label + stretchy Textarea */}
-          <div className="md:col-span-2 flex min-h-0 flex-col">
+          <div className="col-span-2 flex min-h-0 flex-col">
             <label className="mb-2 text-sm font-medium">{t('csvGenerator.promptLabel')}</label>
             <Textarea
               placeholder={t('csvGenerator.promptPlaceholder') ?? undefined}
@@ -234,21 +234,19 @@ export default function CsvGenerator() {
       </Card>
 
       {/* Bottom card: data table (auto height) */}
-
-      {loading ? (
-        <div className="p-6 text-sm text-muted-foreground">
-          {t('csvGenerator.loadingMessage')}
-        </div>
-      ) : previewRows.length ? (
-        <DataTable columns={tableColumns} data={previewRows} />
-      ) : (
-              <Card className="p-4 row-start-3 row-end-4">
-        <div className="p-6 text-sm text-muted-foreground">
-          {t('csvGenerator.emptyState')}
-        </div>
-        </Card>
-      )}
-      
+      <div className='row-start-3 row-end-4 overflow-auto'>
+        {loading ? (
+          <Card className="p-6 text-sm text-muted-foreground">
+            {t('csvGenerator.loadingMessage')}
+          </Card>
+        ) : previewRows.length ? (
+          <DataTable columns={tableColumns} data={previewRows} />
+        ) : (
+          <Card className="p-6 text-sm text-muted-foreground">
+            {t('csvGenerator.emptyState')}
+          </Card>
+        )}
+      </div>
     </div>
   )
 }
