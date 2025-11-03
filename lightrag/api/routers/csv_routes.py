@@ -6,7 +6,7 @@ import csv
 import io
 import json
 from collections.abc import AsyncIterator
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Type, TypeVar
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -67,6 +67,9 @@ class RowSchema(BaseModel):
     document_schema: Dict[str, Any] = Field(
         ..., description="Mapping of template columns to populated values."
     )
+
+
+SchemaModelT = TypeVar("SchemaModelT", bound=BaseModel)
 
 
 TEMPLATES: Dict[str, List[str]] = {
@@ -138,8 +141,13 @@ def create_csv_routes(_rag, api_key: Optional[str] = None):  # pragma: no cover 
         templates.append({"id": "custom", "columns": []})
         return {"templates": templates}
 
-    async def _call_llm(prompt: str, *, system_prompt: str) -> str:
-        """Execute an LLM completion ensuring a plain string response."""
+    async def _call_llm(
+        prompt: str,
+        *,
+        system_prompt: str,
+        schema_model: Type[SchemaModelT],
+    ) -> SchemaModelT:
+        """Execute an LLM completion with structured response enforcement."""
 
         if not hasattr(_rag, "llm_model_func") or _rag.llm_model_func is None:
             raise HTTPException(status_code=500, detail="LLM model function is not configured")
@@ -148,28 +156,80 @@ def create_csv_routes(_rag, api_key: Optional[str] = None):  # pragma: no cover 
             prompt,
             system_prompt=system_prompt,
             stream=False,
+            response_format=schema_model,
         )
 
-        if isinstance(response, str):
+        if response is None:
+            raise HTTPException(status_code=502, detail="LLM returned no data")
+
+        # Handle OpenAI-style parsed completions
+        if hasattr(response, "choices"):
+            choices = getattr(response, "choices", [])
+            if not choices:
+                raise HTTPException(status_code=502, detail="LLM returned no choices")
+            message = getattr(choices[0], "message", None)
+            if message is None:
+                raise HTTPException(status_code=502, detail="LLM response missing message")
+            parsed = getattr(message, "parsed", None)
+            if parsed is None:
+                content = getattr(message, "content", None)
+                if content is None:
+                    raise HTTPException(status_code=502, detail="LLM response missing parsed content")
+                try:
+                    return schema_model.model_validate_json(content)
+                except ValidationError as exc:
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"Structured response validation failed: {exc.errors()}",
+                    ) from exc
+            if isinstance(parsed, schema_model):
+                return parsed
+            try:
+                return schema_model.model_validate(parsed)
+            except ValidationError as exc:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Structured response validation failed: {exc.errors()}",
+                ) from exc
+
+        if isinstance(response, schema_model):
             return response
 
-        if hasattr(response, "__aiter__"):
-            chunks: List[str] = []
-            async for chunk in response:  # type: ignore[assignment]
-                chunks.append(str(chunk))
-            return "".join(chunks)
+        if isinstance(response, BaseModel):
+            try:
+                return schema_model.model_validate(response.model_dump())
+            except ValidationError as exc:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Structured response validation failed: {exc.errors()}",
+                ) from exc
 
-        raise HTTPException(status_code=502, detail="Unexpected LLM response type")
+        if isinstance(response, str):
+            try:
+                return schema_model.model_validate_json(response)
+            except ValidationError as exc:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Structured response validation failed: {exc.errors()}",
+                ) from exc
+
+        if isinstance(response, dict):
+            try:
+                return schema_model.model_validate(response)
+            except ValidationError as exc:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Structured response validation failed: {exc.errors()}",
+                ) from exc
+
+        raise HTTPException(status_code=502, detail="Unexpected structured LLM response type")
 
     async def _plan_rows(req: CsvRequest, columns: List[str]) -> List[PlannedRow]:
         """Ask the LLM to outline each row that should be generated."""
 
         target_rows = max(1, min(req.limit or 1, 20))
         user_instruction = req.prompt.strip() if req.prompt else ""
-        planning_system_prompt = (
-            "You are an expert manufacturing documentation planner. "
-            "Always respond with valid JSON that conforms to the provided schema."
-        )
+        planning_system_prompt = "You are an expert manufacturing documentation planner."
 
         planning_prompt = (
             "Plan the rows that should appear in a CSV export.\n"
@@ -179,30 +239,14 @@ def create_csv_routes(_rag, api_key: Optional[str] = None):  # pragma: no cover 
             "If the user provided instructions, incorporate them."
             "\nInstructions from user: "
             f"{user_instruction or 'None provided.'}\n"
-            "Return JSON with this structure:\n"
-            "{\n  \"rows\": [\n    {\n      \"label\": \"short identifier\",\n"
-            "      \"description\": \"detailed description of what the row should contain\"\n"
-            "    }\n  ]\n}.\n"
             "Provide between 1 and the requested maximum number of rows."
         )
 
-        raw = await _call_llm(planning_prompt, system_prompt=planning_system_prompt)
-
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Failed to parse planning response as JSON: {exc}",
-            ) from exc
-
-        try:
-            plan = RowPlanResponse.model_validate(parsed)
-        except ValidationError as exc:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Planning response did not match expected schema: {exc.errors()}",
-            ) from exc
+        plan = await _call_llm(
+            planning_prompt,
+            system_prompt=planning_system_prompt,
+            schema_model=RowPlanResponse,
+        )
 
         if not plan.rows:
             raise HTTPException(status_code=502, detail="LLM did not return any row plans")
@@ -235,23 +279,11 @@ def create_csv_routes(_rag, api_key: Optional[str] = None):  # pragma: no cover 
             "{\n  \"document_schema\": {\n    \"Column Name\": \"value\"\n  }\n}."
         )
 
-        raw = await _call_llm(completion_prompt, system_prompt=completion_system_prompt)
-
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Failed to parse row generation response as JSON: {exc}",
-            ) from exc
-
-        try:
-            row = RowSchema.model_validate(parsed)
-        except ValidationError as exc:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Row generation response did not match schema: {exc.errors()}",
-            ) from exc
+        row = await _call_llm(
+            completion_prompt,
+            system_prompt=completion_system_prompt,
+            schema_model=RowSchema,
+        )
 
         normalized: Dict[str, Any] = {}
         for column in columns:
