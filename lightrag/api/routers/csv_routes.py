@@ -1,99 +1,50 @@
-"""CSV export routes for LightRAG."""
+"""CSV export routes for LightRAG (strict structured outputs, Option A)."""
 
 from __future__ import annotations
 
 import csv
 import io
 import json
+import re
 from collections.abc import AsyncIterator
 from typing import Any, Dict, List, Optional, Type, TypeVar
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, ConfigDict, create_model
 
 from ..utils_api import get_combined_auth_dependency
 
 router = APIRouter(prefix="/csv", tags=["csv"])
 
-
-class CsvRequest(BaseModel):
-    """Request payload for generating CSV exports."""
-
-    workspace: Optional[str] = Field(
-        default=None,
-        description="Optional workspace identifier when running multi-workspace setups.",
-    )
-    template: str = Field(..., min_length=1, description="The preset template identifier.")
-    prompt: Optional[str] = Field(
-        default=None,
-        description="Optional natural-language instructions describing the desired document.",
-    )
-    columns: Optional[List[str]] = Field(
-        default=None,
-        description="Custom column list when using the 'custom' template.",
-    )
-    filters: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Optional filters to scope exported rows. Reserved for future use.",
-    )
-    limit: Optional[int] = Field(
-        default=1000,
-        ge=1,
-        description="Maximum number of rows to emit.",
-    )
-
-
-class PlannedRow(BaseModel):
-    """Structured description for a row that should be generated."""
-
-    label: str = Field(
-        ..., description="Short identifier for the row, e.g., a process step or part name."
-    )
-    description: str = Field(
-        ..., description="Detailed natural-language summary of the intended row content."
-    )
-
-
-class RowPlanResponse(BaseModel):
-    """Collection of row plans returned from the planning LLM call."""
-
-    rows: List[PlannedRow] = Field(default_factory=list)
-
-
-class RowSchema(BaseModel):
-    """Structured row output matching the template schema."""
-
-    document_schema: Dict[str, Any] = Field(
-        ..., description="Mapping of template columns to populated values."
-    )
-
-
 SchemaModelT = TypeVar("SchemaModelT", bound=BaseModel)
 
 
+# ---------------------------
+# Templates (unchanged)
+# ---------------------------
 TEMPLATES: Dict[str, List[str]] = {
     "fmea": [
-    "Process Step",
-    "Function / Requirements",
-    "Potential Failure Mode",
-    "Potential Effects of Failure",
-    "Severity (S)",
-    "Classification (Special Characteristic)",
-    "Potential Causes / Mechanisms",
-    "Occurrence (O)",
-    "Current Process Controls – Prevention",
-    "Current Process Controls – Detection",
-    "Detection (D)",
-    "Risk Priority Number (RPN)",
-    "Recommended Actions",
-    "Action Owner",
-    "Target Completion Date",
-    "Actions Taken & Effective Date",
-    "Revised Severity (S)",
-    "Revised Occurrence (O)",
-    "Revised Detection (D)",
-    "Revised RPN"
+        "Process Step",
+        "Function / Requirements",
+        "Potential Failure Mode",
+        "Potential Effects of Failure",
+        "Severity (S)",
+        "Classification (Special Characteristic)",
+        "Potential Causes / Mechanisms",
+        "Occurrence (O)",
+        "Current Process Controls – Prevention",
+        "Current Process Controls – Detection",
+        "Detection (D)",
+        "Risk Priority Number (RPN)",
+        "Recommended Actions",
+        "Action Owner",
+        "Target Completion Date",
+        "Actions Taken & Effective Date",
+        "Revised Severity (S)",
+        "Revised Occurrence (O)",
+        "Revised Detection (D)",
+        "Revised RPN",
     ],
     "control_plan": [
         "Process Step",
@@ -125,19 +76,111 @@ TEMPLATES: Dict[str, List[str]] = {
 }
 
 
-def create_csv_routes(_rag, api_key: Optional[str] = None):  # pragma: no cover - simple wiring
-    """Attach CSV generation endpoints to the FastAPI app."""
+# ---------------------------
+# Request/Response models (strict)
+# ---------------------------
+class CsvRequest(BaseModel):
+    """Request payload for generating CSV exports."""
+    model_config = ConfigDict(extra="forbid")
 
+    workspace: Optional[str] = Field(
+        default=None,
+        description="Optional workspace identifier when running multi-workspace setups.",
+    )
+    template: str = Field(..., min_length=1, description="The preset template identifier.")
+    prompt: Optional[str] = Field(
+        default=None,
+        description="Optional natural-language instructions describing the desired document.",
+    )
+    columns: Optional[List[str]] = Field(
+        default=None,
+        description="Custom column list when using the 'custom' template.",
+    )
+    filters: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Optional filters to scope exported rows. Reserved for future use.",
+    )
+    limit: Optional[int] = Field(
+        default=1000,
+        ge=1,
+        description="Maximum number of rows to emit.",
+    )
+
+
+class PlannedRow(BaseModel):
+    """Structured description for a row that should be generated."""
+    model_config = ConfigDict(extra="forbid")
+
+    label: str = Field(
+        ..., description="Short identifier for the row, e.g., a process step or part name."
+    )
+    description: str = Field(
+        ..., description="Detailed natural-language summary of the intended row content."
+    )
+
+
+class RowPlanResponse(BaseModel):
+    """Collection of row plans returned from the planning LLM call."""
+    model_config = ConfigDict(extra="forbid")
+
+    rows: List[PlannedRow] = Field(default_factory=list)
+
+
+# ---------------------------
+# Helpers for strict dynamic schema
+# ---------------------------
+def _safe_field_name(alias: string) -> str:  # type: ignore[name-defined]
+    """Type-narrowed alias for editors. Replaced below by the real function."""
+    ...
+
+
+def _safe_field_name(alias: str) -> str:
+    """
+    Convert arbitrary column labels into valid python identifiers,
+    preserving the original label via Field(alias=...).
+    """
+    name = re.sub(r"\W+", "_", alias.strip())
+    if not name or name[0].isdigit():
+        name = f"f_{name or 'field'}"
+    return name.lower()
+
+
+def _build_row_schema_model(columns: List[str]) -> Type[BaseModel]:
+    """
+    Build a strict Pydantic model where:
+      - document_schema is a strict object with one field per column
+      - each field is str with default "" (so the model is easy to satisfy)
+      - extra fields are forbidden (=> additionalProperties: false)
+    """
+    # DocumentSchema with one aliased field per column
+    doc_fields: Dict[str, tuple[type, Field]] = {}
+    for col in columns:
+        safe = _safe_field_name(col)
+        # store as string; allow empty string
+        doc_fields[safe] = (str, Field("", alias=col))
+
+    DocumentSchema = create_model("DocumentSchema", **doc_fields)
+    DocumentSchema.model_config = ConfigDict(extra="forbid")
+
+    RowSchemaDynamic = create_model(
+        "RowSchemaDynamic",
+        document_schema=(DocumentSchema, ...),
+    )
+    RowSchemaDynamic.model_config = ConfigDict(extra="forbid")
+    return RowSchemaDynamic
+
+
+# ---------------------------
+# Route factory
+# ---------------------------
+def create_csv_routes(_rag, api_key: Optional[str] = None):  # pragma: no cover - wiring only
+    """Attach CSV generation endpoints to the FastAPI app."""
     combined_auth = get_combined_auth_dependency(api_key)
 
     @router.get("/templates", dependencies=[Depends(combined_auth)])
     async def list_templates() -> Dict[str, Any]:
         """Return the available CSV templates."""
-
-        templates = [
-            {"id": key, "columns": value}
-            for key, value in TEMPLATES.items()
-        ]
+        templates = [{"id": key, "columns": value} for key, value in TEMPLATES.items()]
         templates.append({"id": "custom", "columns": []})
         return {"templates": templates}
 
@@ -148,7 +191,6 @@ def create_csv_routes(_rag, api_key: Optional[str] = None):  # pragma: no cover 
         schema_model: Type[SchemaModelT],
     ) -> SchemaModelT:
         """Execute an LLM completion with structured response enforcement."""
-
         if not hasattr(_rag, "llm_model_func") or _rag.llm_model_func is None:
             raise HTTPException(status_code=500, detail="LLM model function is not configured")
 
@@ -225,18 +267,21 @@ def create_csv_routes(_rag, api_key: Optional[str] = None):  # pragma: no cover 
 
     async def _plan_rows(req: CsvRequest, columns: List[str]) -> List[PlannedRow]:
         """Ask the LLM to outline each row that should be generated."""
-
         target_rows = max(1, min(req.limit or 1, 20))
-        user_instruction = req.prompt.strip() if req.prompt else ""
-        planning_system_prompt = "You are an expert manufacturing documentation planner."
+        user_instruction = (req.prompt or "").strip()
+
+        planning_system_prompt = (
+            "You are an expert manufacturing documentation planner. "
+            "Return strictly valid JSON for the provided schema."
+        )
 
         planning_prompt = (
             "Plan the rows that should appear in a CSV export.\n"
             f"Template identifier: {req.template}.\n"
             f"Columns: {json.dumps(columns, ensure_ascii=False)}.\n"
             f"Maximum rows to plan: {target_rows}.\n"
-            "If the user provided instructions, incorporate them."
-            "\nInstructions from user: "
+            "If the user provided instructions, incorporate them.\n"
+            "Instructions from user: "
             f"{user_instruction or 'None provided.'}\n"
             "Provide between 1 and the requested maximum number of rows."
         )
@@ -258,7 +303,6 @@ def create_csv_routes(_rag, api_key: Optional[str] = None):  # pragma: no cover 
         plan: PlannedRow,
     ) -> Dict[str, Any]:
         """Generate a concrete row following the provided schema description."""
-
         completion_system_prompt = (
             "You create detailed manufacturing documents. "
             "Only respond with JSON that matches the required schema."
@@ -272,33 +316,42 @@ def create_csv_routes(_rag, api_key: Optional[str] = None):  # pragma: no cover 
             f"{plan.label}.\n"
             "Row plan description: "
             f"{plan.description}.\n"
-            "Fill every column with a contextually appropriate value using your domain knowledge."
-            "\nIf a value is not applicable, return an empty string."
-            "\nRespond with JSON shaped exactly like:\n"
-            "{\n  \"document_schema\": {\n    \"Column Name\": \"value\"\n  }\n}."
+            "Fill every column with a contextually appropriate value using your domain knowledge.\n"
+            "If a value is not applicable, return an empty string.\n"
+            "Respond with JSON shaped exactly like:\n"
+            "{\n  \"document_schema\": {\n    \"Column Name\": \"value\"\n  }\n}.\n"
+            "Use the column names EXACTLY as provided (including spaces, punctuation, and case). "
+            "Do not add, remove, or rename keys."
         )
 
-        row = await _call_llm(
+        # Build strict row schema for *this* set of columns
+        RowSchemaDynamic = _build_row_schema_model(columns)
+
+        # Call LLM with strict schema
+        row_model = await _call_llm(
             completion_prompt,
             system_prompt=completion_system_prompt,
-            schema_model=RowSchema,
+            schema_model=RowSchemaDynamic,
         )
 
+        # RowSchemaDynamic.document_schema is a Pydantic model with aliases per column.
+        doc = row_model.document_schema
+        data_by_alias = doc.model_dump(by_alias=True)  # exact column labels
+
+        # Normalize into simple dict[str, str]
         normalized: Dict[str, Any] = {}
         for column in columns:
-            value = row.document_schema.get(column, "")
-            if value is None:
+            val = data_by_alias.get(column, "")
+            if val is None:
                 normalized[column] = ""
-            elif isinstance(value, (dict, list)):
-                normalized[column] = json.dumps(value, ensure_ascii=False)
+            elif isinstance(val, (dict, list)):
+                normalized[column] = json.dumps(val, ensure_ascii=False)
             else:
-                normalized[column] = str(value)
-
+                normalized[column] = str(val)
         return normalized
 
     async def _csv_stream(req: CsvRequest, columns: List[str]) -> AsyncIterator[str]:
         """Stream CSV content row by row as it is generated."""
-
         plans = await _plan_rows(req, columns)
 
         buffer = io.StringIO()
@@ -318,7 +371,6 @@ def create_csv_routes(_rag, api_key: Optional[str] = None):  # pragma: no cover 
     @router.post("/generate", dependencies=[Depends(combined_auth)])
     async def generate_csv(req: CsvRequest):
         """Stream a CSV export for the requested template."""
-
         if req.template != "custom":
             columns = TEMPLATES.get(req.template)
             if not columns:
@@ -332,13 +384,10 @@ def create_csv_routes(_rag, api_key: Optional[str] = None):  # pragma: no cover 
             columns = req.columns
 
         stream = _csv_stream(req, columns)
-
         return StreamingResponse(
             stream,
             media_type="text/csv",
-            headers={
-                "Content-Disposition": f'attachment; filename="{req.template}.csv"'
-            },
+            headers={"Content-Disposition": f'attachment; filename="{req.template}.csv"'},
         )
 
     return router
