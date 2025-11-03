@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import csv
 import io
+import json
+from collections.abc import AsyncIterator
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from ..utils_api import get_combined_auth_dependency
 
@@ -39,6 +41,31 @@ class CsvRequest(BaseModel):
         default=1000,
         ge=1,
         description="Maximum number of rows to emit.",
+    )
+
+
+class PlannedRow(BaseModel):
+    """Structured description for a row that should be generated."""
+
+    label: str = Field(
+        ..., description="Short identifier for the row, e.g., a process step or part name."
+    )
+    description: str = Field(
+        ..., description="Detailed natural-language summary of the intended row content."
+    )
+
+
+class RowPlanResponse(BaseModel):
+    """Collection of row plans returned from the planning LLM call."""
+
+    rows: List[PlannedRow] = Field(default_factory=list)
+
+
+class RowSchema(BaseModel):
+    """Structured row output matching the template schema."""
+
+    document_schema: Dict[str, Any] = Field(
+        ..., description="Mapping of template columns to populated values."
     )
 
 
@@ -111,99 +138,151 @@ def create_csv_routes(_rag, api_key: Optional[str] = None):  # pragma: no cover 
         templates.append({"id": "custom", "columns": []})
         return {"templates": templates}
 
-    def _fetch_rows(req: CsvRequest) -> List[Dict[str, Any]]:
-        """Map the requested template to row dictionaries.
+    async def _call_llm(prompt: str, *, system_prompt: str) -> str:
+        """Execute an LLM completion ensuring a plain string response."""
 
-        This placeholder implementation returns synthetic data so the
-        end-to-end flow works before a knowledge-graph mapping is wired in.
-        Replace with queries against ``rag`` once the data model is ready.
-        """
+        if not hasattr(_rag, "llm_model_func") or _rag.llm_model_func is None:
+            raise HTTPException(status_code=500, detail="LLM model function is not configured")
 
-        rows: List[Dict[str, Any]] = []
-        raw_prompt = req.prompt.strip() if req.prompt and req.prompt.strip() else None
-        prompt_note = (
-            f"Generated based on instructions: {raw_prompt}"
-            if raw_prompt
-            else None
+        response = await _rag.llm_model_func(  # type: ignore[func-returns-value]
+            prompt,
+            system_prompt=system_prompt,
+            stream=False,
         )
 
-        if req.template == "fmea":
-            for index in range(1, 4):
-                rows.append(
-                    {
-                        "Process Step": f"Op {index}",
-                        "Function": "Weld",
-                        "Potential Failure Mode": "Porosity",
-                        "Potential Effects": "Leak",
-                        "S": 8,
-                        "Potential Causes": "Contamination",
-                        "O": 5,
-                        "Current Controls": "Visual, Helium Test",
-                        "D": 6,
-                        "RPN": 8 * 5 * 6,
-                        "Action Owner": "Chris" if not raw_prompt else f"Chris — {raw_prompt}",
-                        "Target Date": "2025-11-15",
-                    }
-                )
-        elif req.template == "control_plan":
-            rows.append(
-                {
-                    "Process Step": "Press-Fit",
-                    "Characteristic": "Diameter",
-                    "Specification/Tolerance": "Ø10.00 ±0.05 mm",
-                    "Measurement Method": "Go/No-Go",
-                    "Sample Size/Frequency": "1/Hour",
-                    "Reaction Plan": (
-                        "Stop line if fail"
-                        if not raw_prompt
-                        else f"Stop line if fail — {raw_prompt}"
-                    ),
-                    "Responsibility": "Operator",
-                }
-            )
-        elif req.template == "process_flow":
-            rows = [
-                {
-                    "Step #": 10,
-                    "Process Step": "Cut",
-                    "Input": "Bar",
-                    "Output": "Blank",
-                    "Equipment": "Saw",
-                    "Notes": prompt_note or "",
-                },
-                {
-                    "Step #": 20,
-                    "Process Step": "Weld",
-                    "Input": "Blank",
-                    "Output": "Assembly",
-                    "Equipment": "MIG",
-                    "Notes": "Jig A",
-                },
-            ]
-        elif req.template == "ppap":
-            rows.append(
-                {
-                    "Part Number": "PN-001",
-                    "Part Name": "Bracket",
-                    "Customer": "ACME OEM",
-                    "Supplier": "LightRAG Plant 1",
-                    "Submission Level": "3",
-                    "Requirement": "Dimensional Report",
-                    "Status": "Submitted",
-                    "Comments": (
-                        "Awaiting approval"
-                        if not raw_prompt
-                        else f"Awaiting approval — {raw_prompt}"
-                    ),
-                }
-            )
-        else:
-            columns = req.columns or []
-            rows = [{column: "" for column in columns}]
-            if prompt_note and columns:
-                rows[0][columns[0]] = prompt_note
+        if isinstance(response, str):
+            return response
 
-        return rows
+        if hasattr(response, "__aiter__"):
+            chunks: List[str] = []
+            async for chunk in response:  # type: ignore[assignment]
+                chunks.append(str(chunk))
+            return "".join(chunks)
+
+        raise HTTPException(status_code=502, detail="Unexpected LLM response type")
+
+    async def _plan_rows(req: CsvRequest, columns: List[str]) -> List[PlannedRow]:
+        """Ask the LLM to outline each row that should be generated."""
+
+        target_rows = max(1, min(req.limit or 1, 20))
+        user_instruction = req.prompt.strip() if req.prompt else ""
+        planning_system_prompt = (
+            "You are an expert manufacturing documentation planner. "
+            "Always respond with valid JSON that conforms to the provided schema."
+        )
+
+        planning_prompt = (
+            "Plan the rows that should appear in a CSV export.\n"
+            f"Template identifier: {req.template}.\n"
+            f"Columns: {json.dumps(columns, ensure_ascii=False)}.\n"
+            f"Maximum rows to plan: {target_rows}.\n"
+            "If the user provided instructions, incorporate them."
+            "\nInstructions from user: "
+            f"{user_instruction or 'None provided.'}\n"
+            "Return JSON with this structure:\n"
+            "{\n  \"rows\": [\n    {\n      \"label\": \"short identifier\",\n"
+            "      \"description\": \"detailed description of what the row should contain\"\n"
+            "    }\n  ]\n}.\n"
+            "Provide between 1 and the requested maximum number of rows."
+        )
+
+        raw = await _call_llm(planning_prompt, system_prompt=planning_system_prompt)
+
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Failed to parse planning response as JSON: {exc}",
+            ) from exc
+
+        try:
+            plan = RowPlanResponse.model_validate(parsed)
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Planning response did not match expected schema: {exc.errors()}",
+            ) from exc
+
+        if not plan.rows:
+            raise HTTPException(status_code=502, detail="LLM did not return any row plans")
+
+        return plan.rows[:target_rows]
+
+    async def _materialize_row(
+        req: CsvRequest,
+        columns: List[str],
+        plan: PlannedRow,
+    ) -> Dict[str, Any]:
+        """Generate a concrete row following the provided schema description."""
+
+        completion_system_prompt = (
+            "You create detailed manufacturing documents. "
+            "Only respond with JSON that matches the required schema."
+        )
+
+        completion_prompt = (
+            "Generate a single row for a CSV export.\n"
+            f"Template identifier: {req.template}.\n"
+            f"Columns (schema keys): {json.dumps(columns, ensure_ascii=False)}.\n"
+            "Row plan label: "
+            f"{plan.label}.\n"
+            "Row plan description: "
+            f"{plan.description}.\n"
+            "Fill every column with a contextually appropriate value using your domain knowledge."
+            "\nIf a value is not applicable, return an empty string."
+            "\nRespond with JSON shaped exactly like:\n"
+            "{\n  \"document_schema\": {\n    \"Column Name\": \"value\"\n  }\n}."
+        )
+
+        raw = await _call_llm(completion_prompt, system_prompt=completion_system_prompt)
+
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Failed to parse row generation response as JSON: {exc}",
+            ) from exc
+
+        try:
+            row = RowSchema.model_validate(parsed)
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Row generation response did not match schema: {exc.errors()}",
+            ) from exc
+
+        normalized: Dict[str, Any] = {}
+        for column in columns:
+            value = row.document_schema.get(column, "")
+            if value is None:
+                normalized[column] = ""
+            elif isinstance(value, (dict, list)):
+                normalized[column] = json.dumps(value, ensure_ascii=False)
+            else:
+                normalized[column] = str(value)
+
+        return normalized
+
+    async def _csv_stream(req: CsvRequest, columns: List[str]) -> AsyncIterator[str]:
+        """Stream CSV content row by row as it is generated."""
+
+        plans = await _plan_rows(req, columns)
+
+        buffer = io.StringIO()
+        writer = csv.DictWriter(buffer, fieldnames=columns, extrasaction="ignore")
+        writer.writeheader()
+        yield buffer.getvalue()
+        buffer.seek(0)
+        buffer.truncate(0)
+
+        for plan in plans:
+            row = await _materialize_row(req, columns, plan)
+            writer.writerow(row)
+            yield buffer.getvalue()
+            buffer.seek(0)
+            buffer.truncate(0)
 
     @router.post("/generate", dependencies=[Depends(combined_auth)])
     async def generate_csv(req: CsvRequest):
@@ -221,19 +300,10 @@ def create_csv_routes(_rag, api_key: Optional[str] = None):  # pragma: no cover 
                 )
             columns = req.columns
 
-        rows = _fetch_rows(req)
-
-        buffer = io.StringIO()
-        writer = csv.DictWriter(buffer, fieldnames=columns, extrasaction="ignore")
-        writer.writeheader()
-
-        max_rows = req.limit or 1000
-        for row in rows[:max_rows]:
-            writer.writerow(row)
-        buffer.seek(0)
+        stream = _csv_stream(req, columns)
 
         return StreamingResponse(
-            iter([buffer.getvalue()]),
+            stream,
             media_type="text/csv",
             headers={
                 "Content-Disposition": f'attachment; filename="{req.template}.csv"'
