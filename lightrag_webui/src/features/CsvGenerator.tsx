@@ -150,7 +150,7 @@ export default function CsvGenerator() {
   }
 
   return (
-    <div className="mx-auto grid max-w-6xl grid-rows-[auto,1fr,auto] gap-4 p-4 min-h-screen">
+    <div className=" grid gap-4 p-4 ">
 
       {/* Top split card (grows to fill remaining height) */}
       <Card className="p-4 row-start-2 row-end-3 h-full">
