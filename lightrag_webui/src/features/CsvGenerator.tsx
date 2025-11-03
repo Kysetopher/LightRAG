@@ -234,19 +234,21 @@ export default function CsvGenerator() {
       </Card>
 
       {/* Bottom card: data table (auto height) */}
-      <Card className="p-4 row-start-3 row-end-4">
-        {loading ? (
-          <div className="p-6 text-sm text-muted-foreground">
-            {t('csvGenerator.loadingMessage')}
-          </div>
-        ) : previewRows.length ? (
-          <DataTable columns={tableColumns} data={previewRows} />
-        ) : (
-          <div className="p-6 text-sm text-muted-foreground">
-            {t('csvGenerator.emptyState')}
-          </div>
-        )}
-      </Card>
+
+      {loading ? (
+        <div className="p-6 text-sm text-muted-foreground">
+          {t('csvGenerator.loadingMessage')}
+        </div>
+      ) : previewRows.length ? (
+        <DataTable columns={tableColumns} data={previewRows} />
+      ) : (
+              <Card className="p-4 row-start-3 row-end-4">
+        <div className="p-6 text-sm text-muted-foreground">
+          {t('csvGenerator.emptyState')}
+        </div>
+        </Card>
+      )}
+      
     </div>
   )
 }
