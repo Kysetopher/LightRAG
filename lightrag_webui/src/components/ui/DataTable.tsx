@@ -85,7 +85,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                       className={[
                         // large invisible hitbox that slightly overflows right side
                         'absolute top-0 right-0 -mr-2 h-full w-[14px]',
-                        'z-50 cursor-col-resize touch-none select-none'
+                        'cursor-col-resize touch-none select-none z-50'
                       ].join(' ')}
                       style={{ touchAction: 'none' }}
                       aria-label="Resize column"
@@ -95,7 +95,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                       {/* visible thin line centered in the hitbox */}
                       <div
                         className={[
-                          'absolute top-0 bottom-0 left-1/2 w-px -translate-x-1/2',
+                          'absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-px',
                           'bg-border',
                           isResizing ? 'bg-muted-foreground' : 'hover:bg-muted-foreground/60'
                         ].join(' ')}
@@ -122,7 +122,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                         minWidth: cell.column.columnDef.minSize ?? 60,
                         maxWidth: cell.column.columnDef.maxSize ?? 1200
                       }}
-                      className="align-top"
+                      className="truncate"
                     >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </TableCell>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
 
@@ -21,17 +21,6 @@ interface RowData {
   [key: string]: string
 }
 
-interface StoredCsvState {
-  template: string
-  customColumns: string
-  limit: string
-  prompt: string
-  rows: RowData[]
-  columns: string[]
-}
-
-const STORAGE_KEY = 'csvGeneratorState:v1'
-
 export default function CsvGenerator() {
   const { t } = useTranslation()
   const workspace = useBackendState.use.workspace()
@@ -41,12 +30,8 @@ export default function CsvGenerator() {
   const [limit, setLimit] = useState<string>('1000')
   const [prompt, setPrompt] = useState<string>('')
   const [previewRows, setPreviewRows] = useState<RowData[]>([])
-  const [csvColumns, setCsvColumns] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [hasHydratedStorage, setHasHydratedStorage] = useState(false)
-
-  const storageId = workspace ?? 'default'
 
   useEffect(() => {
     let cancelled = false
@@ -75,96 +60,6 @@ export default function CsvGenerator() {
     }
   }, [t])
 
-  useEffect(() => {
-    setHasHydratedStorage(false)
-    if (typeof window === 'undefined') {
-      setPreviewRows([])
-      setCsvColumns([])
-      setHasHydratedStorage(true)
-      return
-    }
-
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEY)
-      if (!raw) {
-        setTemplate('fmea')
-        setCustomColumns('')
-        setLimit('1000')
-        setPrompt('')
-        setPreviewRows([])
-        setCsvColumns([])
-        setError(null)
-        setHasHydratedStorage(true)
-        return
-      }
-
-      const parsed = JSON.parse(raw) as Record<string, StoredCsvState | undefined>
-      const storedState = parsed?.[storageId]
-
-      if (!storedState) {
-        setTemplate('fmea')
-        setCustomColumns('')
-        setLimit('1000')
-        setPrompt('')
-        setPreviewRows([])
-        setCsvColumns([])
-        setError(null)
-        setHasHydratedStorage(true)
-        return
-      }
-
-      setTemplate(storedState.template ?? 'fmea')
-      setCustomColumns(storedState.customColumns ?? '')
-      setLimit(storedState.limit ?? '1000')
-      setPrompt(storedState.prompt ?? '')
-      setPreviewRows(Array.isArray(storedState.rows) ? storedState.rows : [])
-      setCsvColumns(Array.isArray(storedState.columns) ? storedState.columns : [])
-      setError(null)
-    } catch (err) {
-      console.error('Failed to restore CSV generator state', err)
-      setTemplate('fmea')
-      setCustomColumns('')
-      setLimit('1000')
-      setPrompt('')
-      setPreviewRows([])
-      setCsvColumns([])
-      setError(null)
-    } finally {
-      setHasHydratedStorage(true)
-    }
-  }, [storageId])
-
-  useEffect(() => {
-    if (!hasHydratedStorage || typeof window === 'undefined') {
-      return
-    }
-
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEY)
-      const parsed = raw ? (JSON.parse(raw) as Record<string, StoredCsvState>) : {}
-      parsed[storageId] = {
-        template,
-        customColumns,
-        limit,
-        prompt,
-        rows: previewRows,
-        columns: csvColumns
-      }
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed))
-    } catch (err) {
-      console.error('Failed to persist CSV generator state', err)
-    }
-  }, [
-    storageId,
-    hasHydratedStorage,
-    template,
-    customColumns,
-    limit,
-    prompt,
-    previewRows,
-    csvColumns
-  ])
-
   const columns = useMemo(() => {
     if (template === 'custom') {
       return customColumns
@@ -175,138 +70,24 @@ export default function CsvGenerator() {
     return templates.find((item) => item.id === template)?.columns ?? []
   }, [customColumns, template, templates])
 
-  const activeColumns = csvColumns.length ? csvColumns : columns
-
-  const handleCellChange = useCallback(
-    (rowIndex: number, columnId: string, value: string) => {
-      setPreviewRows((previous) => {
-        if (!previous[rowIndex]) {
-          return previous
-        }
-        const updated = [...previous]
-        updated[rowIndex] = {
-          ...updated[rowIndex],
-          [columnId]: value
-        }
-        return updated
-      })
-    },
-    [setPreviewRows]
-  )
-
   const tableColumns = useMemo<ColumnDef<RowData>[]>(() => {
-    return activeColumns.map((columnName) => ({
-      header: columnName,
-      accessorKey: columnName,
-      cell: ({ row, column, getValue }) => (
-        <Input
-          value={(getValue() as string) ?? ''}
-          onChange={(event) => handleCellChange(row.index, column.id as string, event.target.value)}
-          className="h-9 w-full"
-        />
-      )
+    return columns.map((column) => ({
+      header: column,
+      accessorKey: column
     }))
-  }, [activeColumns, handleCellChange])
+  }, [columns])
 
   const limitValue = useMemo(() => {
     const numeric = Number(limit)
     return Number.isFinite(numeric) && numeric > 0 ? Math.floor(numeric) : 1
   }, [limit])
 
-  const disablePreview = template === 'custom' && columns.length === 0
-  const disableDownload =
-    template === 'custom' &&
-    columns.length === 0 &&
-    previewRows.length === 0 &&
-    csvColumns.length === 0
+  const disableCustomActions = template === 'custom' && columns.length === 0
 
-  const parseCsvText = useCallback((text: string) => {
-    const lines = text.split(/\r?\n/).filter((line) => line.length > 0)
-    if (!lines.length) {
-      return { headers: [] as string[], rows: [] as RowData[] }
-    }
-
-    const [headerLine, ...dataLines] = lines
-    const headers = headerLine.split(',')
-    const rows = dataLines.map<RowData>((line) => {
-      const values = line.split(',')
-      return headers.reduce<RowData>((acc, key, index) => {
-        acc[key] = values[index] ?? ''
-        return acc
-      }, {})
-    })
-
-    return { headers, rows }
-  }, [])
-
-  const createCsvContent = useCallback((headers: string[], rows: RowData[]) => {
-    if (!headers.length) {
-      return ''
-    }
-
-    const encodeValue = (value: string | undefined) => {
-      const raw = value ?? ''
-      if (/[",\n\r]/.test(raw)) {
-        return `"${raw.replace(/"/g, '""')}"`
-      }
-      return raw
-    }
-
-    const headerLine = headers.map((header) => encodeValue(header)).join(',')
-    const lines = rows.map((row) =>
-      headers.map((header) => encodeValue(row[header] ?? '')).join(',')
-    )
-    return [headerLine, ...lines].join('\n')
-  }, [])
-
-  const downloadFromRows = useCallback(
-    (headers: string[], rows: RowData[]) => {
-      if (!headers.length) {
-        setError(t('csvGenerator.errors.downloadFailed'))
-        return
-      }
-
-      const csvContent = createCsvContent(headers, rows)
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-      const url = URL.createObjectURL(blob)
-      const anchor = document.createElement('a')
-      anchor.href = url
-      anchor.download = `${template}.csv`
-      anchor.click()
-      URL.revokeObjectURL(url)
-    },
-    [createCsvContent, setError, t, template]
-  )
-
-  const handleTemplateChange = useCallback(
-    (value: string) => {
-      setTemplate(value)
-      setPreviewRows([])
-      setCsvColumns([])
-      setError(null)
-    },
-    [setTemplate, setPreviewRows, setCsvColumns, setError]
-  )
-
-  const handleCustomColumnsChange = useCallback(
-    (value: string) => {
-      setCustomColumns(value)
-      setPreviewRows([])
-      setCsvColumns([])
-      setError(null)
-    },
-    [setCustomColumns, setPreviewRows, setCsvColumns, setError]
-  )
-
-  const handlePromptChange = useCallback(
-    (value: string) => {
-      setPrompt(value)
-      setPreviewRows([])
-      setCsvColumns([])
-      setError(null)
-    },
-    [setPrompt, setPreviewRows, setCsvColumns, setError]
-  )
+  useEffect(() => {
+    setPreviewRows([])
+    setError(null)
+  }, [template, customColumns, prompt])
 
   const handlePreview = async () => {
     setLoading(true)
@@ -317,16 +98,26 @@ export default function CsvGenerator() {
         template,
         prompt: prompt.trim() ? prompt : undefined,
         columns: template === 'custom' ? columns : undefined,
-        limit: limitValue
+        limit: 50
       })
       const text = await blob.text()
-      const { headers, rows } = parseCsvText(text)
-      setCsvColumns(headers)
+      const [headerLine, ...lines] = text.split(/\r?\n/).filter(Boolean)
+      if (!headerLine) {
+        setPreviewRows([])
+        return
+      }
+      const headers = headerLine.split(',')
+      const rows = lines.map<RowData>((line) => {
+        const values = line.split(',')
+        return headers.reduce<RowData>((acc, key, index) => {
+          acc[key] = values[index] ?? ''
+          return acc
+        }, {})
+      })
       setPreviewRows(rows)
     } catch (err) {
       console.error(err)
       setPreviewRows([])
-      setCsvColumns([])
       setError(t('csvGenerator.errors.previewFailed'))
     } finally {
       setLoading(false)
@@ -334,20 +125,8 @@ export default function CsvGenerator() {
   }
 
   const handleDownload = async () => {
-    setError(null)
-    const headers = csvColumns.length ? csvColumns : columns
-
-    if (previewRows.length && headers.length) {
-      downloadFromRows(headers, previewRows)
-      return
-    }
-
-    if (template === 'custom' && columns.length === 0) {
-      setError(t('csvGenerator.errors.downloadFailed'))
-      return
-    }
-
     setLoading(true)
+    setError(null)
     try {
       const blob = await generateCsv({
         workspace: workspace || undefined,
@@ -356,12 +135,12 @@ export default function CsvGenerator() {
         columns: template === 'custom' ? columns : undefined,
         limit: limitValue
       })
-      const text = await blob.text()
-      const { headers: fetchedHeaders, rows } = parseCsvText(text)
-      const resolvedHeaders = fetchedHeaders.length ? fetchedHeaders : headers
-      setCsvColumns(resolvedHeaders)
-      setPreviewRows(rows)
-      downloadFromRows(resolvedHeaders, rows)
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `${template}.csv`
+      anchor.click()
+      URL.revokeObjectURL(url)
     } catch (err) {
       console.error(err)
       setError(t('csvGenerator.errors.downloadFailed'))
@@ -371,15 +150,16 @@ export default function CsvGenerator() {
   }
 
   return (
-    <div className="grid gap-4 p-4">
+    <div className="grid gap-4 p-4 ">
+
       {/* Top split card (grows to fill remaining height) */}
       <Card className="p-4">
         <div className="grid h-full grid-cols-1 gap-4 md:grid-cols-3">
           {/* Left pane: controls + buttons + fixed error row */}
-          <div className="grid min-h-0 grid-rows-[auto,auto,auto,1fr,auto,auto] gap-4">
+          <div className="min-h-0 grid grid-rows-[auto,auto,auto,1fr,auto,auto] gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">{t('csvGenerator.templateLabel')}</label>
-              <Select value={template} onValueChange={handleTemplateChange}>
+              <Select value={template} onValueChange={setTemplate}>
                 <SelectTrigger>
                   <SelectValue placeholder={t('csvGenerator.templatePlaceholder')} />
                 </SelectTrigger>
@@ -395,13 +175,11 @@ export default function CsvGenerator() {
 
             {template === 'custom' && (
               <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  {t('csvGenerator.customColumnsLabel')}
-                </label>
+                <label className="text-sm font-medium">{t('csvGenerator.customColumnsLabel')}</label>
                 <Input
                   placeholder={t('csvGenerator.customColumnsPlaceholder')}
                   value={customColumns}
-                  onChange={(e) => handleCustomColumnsChange(e.target.value)}
+                  onChange={(e) => setCustomColumns(e.target.value)}
                 />
               </div>
             )}
@@ -421,20 +199,23 @@ export default function CsvGenerator() {
 
             {/* Buttons: left-aligned, pinned to bottom of left pane */}
             <div className="mt-auto flex flex-wrap gap-2">
-              <Button onClick={handlePreview} disabled={loading || disablePreview}>
+              <Button onClick={handlePreview} disabled={loading || disableCustomActions}>
                 {t('csvGenerator.previewButton')}
               </Button>
               <Button
                 variant="outline"
                 onClick={handleDownload}
-                disabled={loading || disableDownload}
+                disabled={loading || disableCustomActions}
               >
                 {t('csvGenerator.downloadButton')}
               </Button>
             </div>
 
             {/* Fixed-height error slot prevents layout shift */}
-            <p aria-live="polite" className="text-destructive h-5 text-sm">
+            <p
+              aria-live="polite"
+              className="h-5 text-sm text-destructive"
+            >
               {error || '\u00A0'}
             </p>
           </div>
@@ -445,23 +226,25 @@ export default function CsvGenerator() {
             <Textarea
               placeholder={t('csvGenerator.promptPlaceholder') ?? undefined}
               value={prompt}
-              onChange={(e) => handlePromptChange(e.target.value)}
-              className="resize-vertical h-auto min-h-40 flex-1"
+              onChange={(e) => setPrompt(e.target.value)}
+              className="flex-1 h-auto min-h-40 resize-vertical"
             />
           </div>
         </div>
       </Card>
 
       {/* Bottom card: data table (auto height) */}
-      <div className="overflow-auto">
+      <div className='overflow-auto'>
         {loading ? (
-          <Card className="text-muted-foreground p-6 text-sm">
+          <Card className="p-6 text-sm text-muted-foreground">
             {t('csvGenerator.loadingMessage')}
           </Card>
         ) : previewRows.length ? (
           <DataTable columns={tableColumns} data={previewRows} />
         ) : (
-          <Card className="text-muted-foreground p-6 text-sm">{t('csvGenerator.emptyState')}</Card>
+          <Card className="p-6 text-sm text-muted-foreground">
+            {t('csvGenerator.emptyState')}
+          </Card>
         )}
       </div>
     </div>
