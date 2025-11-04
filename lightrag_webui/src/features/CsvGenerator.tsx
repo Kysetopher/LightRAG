@@ -186,8 +186,8 @@ export default function CsvGenerator() {
       cell: ({ row }) => (
         <Input
           value={row.original[columnKey] ?? ''}
-          onChange={(event) => handleCellChange(row.index, columnKey, event.target.value)}
-          className="h-full p-0 m-0 border-none w-full focus:outline-none focus:ring-0 focus:border-transparent"
+          onChange={(e) => handleCellChange(row.index, columnKey, e.target.value)}
+          className="h-full rounded-none p-0 m-0 w-full border-none focus-visible:ring-0 focus-visible:outline-none focus-visible:border-transparent"
         />
       )
     }))
