@@ -118,7 +118,15 @@
         "tooltip": "上傳製造控制類 CSV 文件",
         "title": "上傳製造控制文件",
         "description": "拖曳製造控制 CSV 文件或點擊瀏覽。",
-        "fileTypes": "僅支援 CSV 檔 (.csv)"
+        "fileTypes": "僅支援 CSV 檔 (.csv)",
+        "planTypeLabel": "文件類型",
+        "planTypePlaceholder": "選擇文件類型",
+        "planTypeOptions": {
+          "control_plan": "控制計劃",
+          "process_flow": "製程流程",
+          "fmea": "FMEA",
+          "ppap": "PPAP"
+        }
       }
     },
     "documentManager": {
