@@ -22,8 +22,6 @@ interface DataTableProps<TData, TValue> {
   data: TData[]
 }
 
-const TRUNCATE = 'block overflow-hidden text-ellipsis whitespace-nowrap'
-
 export default function DataTable<TData, TValue>({ columns, data }: DataTableProps<TData, TValue>) {
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({})
   const [columnSizingInfo, setColumnSizingInfo] = useState<ColumnSizingInfoState>({} as any)
@@ -74,19 +72,9 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                     // unify padding with body cells
                     className="px-3"
                   >
-                    {header.isPlaceholder ? null : (
-                      // The actual text wrapper that truncates
-                      <span
-                        className={TRUNCATE}
-                        title={
-                          typeof header.column.columnDef.header === 'string'
-                            ? header.column.columnDef.header
-                            : undefined
-                        }
-                      >
-                        {flexRender(header.column.columnDef.header, header.getContext())}
-                      </span>
-                    )}
+                    {header.isPlaceholder
+                      ? null
+                      : flexRender(header.column.columnDef.header, header.getContext())}
 
                     {/* Big hit area; doesn't affect layout */}
                     <div
@@ -130,10 +118,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                       }}
                       className="px-3"
                     >
-                      {/* Truncate wrapper for body cells too */}
-                      <div className={TRUNCATE}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </div>
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </TableCell>
                   )
                 })}

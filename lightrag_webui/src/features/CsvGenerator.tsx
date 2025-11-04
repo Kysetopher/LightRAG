@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
 
@@ -17,8 +17,40 @@ import {
 } from '@/components/ui/Select'
 import { useBackendState } from '@/stores/state'
 
+const STORAGE_KEY = 'lightrag.csvGeneratorState'
+
 interface RowData {
   [key: string]: string
+}
+
+interface PersistedState {
+  template: string
+  customColumns: string
+  limit: string
+  prompt: string
+  rows: RowData[]
+}
+
+function sanitizeRows(rows: RowData[]): RowData[] {
+  return rows.map((row) =>
+    Object.entries(row).reduce<RowData>((acc, [key, value]) => {
+      if (typeof value === 'string') {
+        acc[key] = value
+      } else if (value === null || value === undefined) {
+        acc[key] = ''
+      } else {
+        acc[key] = String(value)
+      }
+      return acc
+    }, {})
+  )
+}
+
+function escapeCsvValue(value: string): string {
+  if (/[",\n]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`
+  }
+  return value
 }
 
 export default function CsvGenerator() {
@@ -32,6 +64,36 @@ export default function CsvGenerator() {
   const [previewRows, setPreviewRows] = useState<RowData[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY)
+      if (!raw) {
+        return
+      }
+      const saved = JSON.parse(raw) as Partial<PersistedState>
+      if (saved.template) {
+        setTemplate(saved.template)
+      }
+      if (typeof saved.customColumns === 'string') {
+        setCustomColumns(saved.customColumns)
+      }
+      if (typeof saved.limit === 'string') {
+        setLimit(saved.limit)
+      }
+      if (typeof saved.prompt === 'string') {
+        setPrompt(saved.prompt)
+      }
+      if (Array.isArray(saved.rows) && saved.rows.length) {
+        setPreviewRows(sanitizeRows(saved.rows))
+      }
+    } catch (err) {
+      console.error('Failed to restore CSV generator state', err)
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -60,7 +122,7 @@ export default function CsvGenerator() {
     }
   }, [t])
 
-  const columns = useMemo(() => {
+  const templateColumns = useMemo(() => {
     if (template === 'custom') {
       return customColumns
         .split(',')
@@ -70,24 +132,91 @@ export default function CsvGenerator() {
     return templates.find((item) => item.id === template)?.columns ?? []
   }, [customColumns, template, templates])
 
-  const tableColumns = useMemo<ColumnDef<RowData>[]>(() => {
-    return columns.map((column) => ({
-      header: column,
-      accessorKey: column
-    }))
-  }, [columns])
+  const displayedColumns = useMemo(() => {
+    if (templateColumns.length) {
+      return templateColumns
+    }
+    const dynamic = new Set<string>()
+    previewRows.forEach((row) => {
+      Object.keys(row).forEach((key) => dynamic.add(key))
+    })
+    return Array.from(dynamic)
+  }, [previewRows, templateColumns])
 
   const limitValue = useMemo(() => {
     const numeric = Number(limit)
     return Number.isFinite(numeric) && numeric > 0 ? Math.floor(numeric) : 1
   }, [limit])
 
-  const disableCustomActions = template === 'custom' && columns.length === 0
+  const disableCustomActions = template === 'custom' && templateColumns.length === 0
 
-  useEffect(() => {
+  const handleTemplateChange = useCallback((value: string) => {
+    setTemplate(value)
     setPreviewRows([])
     setError(null)
-  }, [template, customColumns, prompt])
+  }, [])
+
+  const handleCustomColumnsChange = useCallback((value: string) => {
+    setCustomColumns(value)
+    setPreviewRows([])
+    setError(null)
+  }, [])
+
+  const handlePromptChange = useCallback((value: string) => {
+    setPrompt(value)
+    setPreviewRows([])
+    setError(null)
+  }, [])
+
+  const handleCellChange = useCallback((rowIndex: number, columnKey: string, nextValue: string) => {
+    setPreviewRows((rows) =>
+      rows.map((row, index) => {
+        if (index !== rowIndex) {
+          return row
+        }
+        return { ...row, [columnKey]: nextValue }
+      })
+    )
+  }, [])
+
+  const tableColumns = useMemo<ColumnDef<RowData>[]>(() => {
+    return displayedColumns.map((columnKey) => ({
+      header: columnKey,
+      accessorKey: columnKey,
+      cell: ({ row }) => (
+        <Input
+          value={row.original[columnKey] ?? ''}
+          onChange={(event) => handleCellChange(row.index, columnKey, event.target.value)}
+          className="h-8 w-full"
+        />
+      )
+    }))
+  }, [displayedColumns, handleCellChange])
+
+  const handlePersist = useCallback(
+    (rows: RowData[]) => {
+      if (typeof window === 'undefined') {
+        return
+      }
+      try {
+        const payload: PersistedState = {
+          template,
+          customColumns,
+          limit,
+          prompt,
+          rows
+        }
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+      } catch (err) {
+        console.error('Failed to persist CSV generator state', err)
+      }
+    },
+    [customColumns, limit, prompt, template]
+  )
+
+  useEffect(() => {
+    handlePersist(previewRows)
+  }, [handlePersist, previewRows])
 
   const handlePreview = async () => {
     setLoading(true)
@@ -97,8 +226,8 @@ export default function CsvGenerator() {
         workspace: workspace || undefined,
         template,
         prompt: prompt.trim() ? prompt : undefined,
-        columns: template === 'custom' ? columns : undefined,
-        limit: 50
+        columns: template === 'custom' ? templateColumns : undefined,
+        limit: limitValue
       })
       const text = await blob.text()
       const [headerLine, ...lines] = text.split(/\r?\n/).filter(Boolean)
@@ -128,13 +257,23 @@ export default function CsvGenerator() {
     setLoading(true)
     setError(null)
     try {
-      const blob = await generateCsv({
-        workspace: workspace || undefined,
-        template,
-        prompt: prompt.trim() ? prompt : undefined,
-        columns: template === 'custom' ? columns : undefined,
-        limit: limitValue
-      })
+      let blob: Blob
+      if (previewRows.length && displayedColumns.length) {
+        const header = displayedColumns.join(',')
+        const rows = previewRows.slice(0, limitValue).map((row) =>
+          displayedColumns.map((columnKey) => escapeCsvValue(row[columnKey] ?? '')).join(',')
+        )
+        const csvText = [header, ...rows].join('\n')
+        blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' })
+      } else {
+        blob = await generateCsv({
+          workspace: workspace || undefined,
+          template,
+          prompt: prompt.trim() ? prompt : undefined,
+          columns: template === 'custom' ? templateColumns : undefined,
+          limit: limitValue
+        })
+      }
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = url
@@ -159,7 +298,7 @@ export default function CsvGenerator() {
           <div className="min-h-0 grid grid-rows-[auto,auto,auto,1fr,auto,auto] gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">{t('csvGenerator.templateLabel')}</label>
-              <Select value={template} onValueChange={setTemplate}>
+              <Select value={template} onValueChange={handleTemplateChange}>
                 <SelectTrigger>
                   <SelectValue placeholder={t('csvGenerator.templatePlaceholder')} />
                 </SelectTrigger>
@@ -179,7 +318,7 @@ export default function CsvGenerator() {
                 <Input
                   placeholder={t('csvGenerator.customColumnsPlaceholder')}
                   value={customColumns}
-                  onChange={(e) => setCustomColumns(e.target.value)}
+                  onChange={(e) => handleCustomColumnsChange(e.target.value)}
                 />
               </div>
             )}
@@ -226,7 +365,7 @@ export default function CsvGenerator() {
             <Textarea
               placeholder={t('csvGenerator.promptPlaceholder') ?? undefined}
               value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
+              onChange={(e) => handlePromptChange(e.target.value)}
               className="flex-1 h-auto min-h-40 resize-vertical"
             />
           </div>
