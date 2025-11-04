@@ -112,6 +112,13 @@
         "removeFile": "إزالة الملف",
         "uploadDescription": "يمكنك رفع {{isMultiple ? 'عدة' : count}} ملفات (حتى {{maxSize}} لكل منها)",
         "duplicateFile": "اسم الملف موجود بالفعل في ذاكرة التخزين المؤقت للخادم"
+      },
+      "manufacturing": {
+        "button": "رفع CSV للتحكم",
+        "tooltip": "رفع مستندات التحكم التصنيعية بصيغة CSV",
+        "title": "رفع مستند تحكم تصنيعي",
+        "description": "اسحب وأفلت مستندات التحكم بصيغة CSV أو انقر للتصفح.",
+        "fileTypes": "ملفات CSV فقط (.csv)"
       }
     },
     "documentManager": {

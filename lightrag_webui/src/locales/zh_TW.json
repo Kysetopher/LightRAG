@@ -112,6 +112,13 @@
         "removeFile": "移除檔案",
         "uploadDescription": "您可以上傳{{isMultiple ? '多個' : count}}個檔案（每個檔案最大{{maxSize}}）",
         "duplicateFile": "檔案名稱與伺服器上的快取重複"
+      },
+      "manufacturing": {
+        "button": "上傳控制 CSV",
+        "tooltip": "上傳製造控制類 CSV 文件",
+        "title": "上傳製造控制文件",
+        "description": "拖曳製造控制 CSV 文件或點擊瀏覽。",
+        "fileTypes": "僅支援 CSV 檔 (.csv)"
       }
     },
     "documentManager": {
