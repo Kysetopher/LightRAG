@@ -72,9 +72,19 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                     // unify padding with body cells
                     className="px-3"
                   >
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(header.column.columnDef.header, header.getContext())}
+                    {header.isPlaceholder ? null : (
+                      // The actual text wrapper that truncates
+                      <span
+                        className='block overflow-hidden text-ellipsis whitespace-nowrap'
+                        title={
+                          typeof header.column.columnDef.header === 'string'
+                            ? header.column.columnDef.header
+                            : undefined
+                        }
+                      >
+                        {flexRender(header.column.columnDef.header, header.getContext())}
+                      </span>
+                    )}
 
                     {/* Big hit area; doesn't affect layout */}
                     <div
