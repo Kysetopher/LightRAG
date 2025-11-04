@@ -65,6 +65,7 @@ download_models_hf.py
 
 # unit-test files
 test_*
+!/tests/test_manufacturing_ingest.py
 
 # Cline files
 memory-bank
