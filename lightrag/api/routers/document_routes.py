@@ -3,7 +3,6 @@ This module contains all document-related routes for the LightRAG API.
 """
 
 import asyncio
-from lightrag.utils import logger, get_pinyin_sort_key
 import aiofiles
 import shutil
 import traceback
@@ -16,6 +15,7 @@ from fastapi import (
     BackgroundTasks,
     Depends,
     File,
+    Form,
     HTTPException,
     UploadFile,
 )
@@ -23,8 +23,21 @@ from pydantic import BaseModel, Field, field_validator
 
 from lightrag import LightRAG
 from lightrag.base import DeletionResult, DocProcessingStatus, DocStatus
-from lightrag.utils import generate_track_id
+from lightrag.utils import (
+    logger,
+    get_pinyin_sort_key,
+    sanitize_text_for_encoding,
+    get_content_summary,
+    compute_mdhash_id,
+    generate_track_id,
+)
 from lightrag.api.utils_api import get_combined_auth_dependency
+from lightrag.manufacturing_ingest import (
+    ingest_csv,
+    IngestionError,
+    supported_doc_types,
+    build_manufacturing_custom_kg,
+)
 from ..config import global_args
 
 
@@ -1858,6 +1871,237 @@ def create_document_routes(
             logger.error(f"Error /documents/upload: {file.filename}: {str(e)}")
             logger.error(traceback.format_exc())
             raise HTTPException(status_code=500, detail=str(e))
+
+    @router.post(
+        "/manufacturing_ingest",
+        response_model=InsertResponse,
+        dependencies=[Depends(combined_auth)],
+    )
+    async def ingest_manufacturing_document(
+        file: UploadFile = File(...),
+        doc_type: str = Form("control_plan"),
+        import_batch: Optional[str] = Form(None),
+        allow_reimport: bool = Form(False),
+    ):
+        """Upload a manufacturing CSV document and ingest it into LightRAG."""
+
+        if not file.filename:
+            raise HTTPException(status_code=400, detail="Filename cannot be empty")
+
+        normalized_doc_type = (doc_type or "").strip()
+        if not normalized_doc_type:
+            normalized_doc_type = "control_plan"
+
+        supported_types = supported_doc_types()
+        supported_lookup = {value.casefold(): value for value in supported_types}
+        doc_type_key = normalized_doc_type.casefold()
+        if doc_type_key not in supported_lookup:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Unsupported document type '{normalized_doc_type}'. "
+                    f"Supported types: {', '.join(supported_types)}"
+                ),
+            )
+        canonical_doc_type = supported_lookup[doc_type_key]
+
+        batch_value = (import_batch or "").strip()
+        if not batch_value:
+            batch_value = datetime.now(timezone.utc).isoformat()
+
+        manufacturing_dir = doc_manager.input_dir / "manufacturing"
+        manufacturing_dir.mkdir(parents=True, exist_ok=True)
+
+        safe_filename = sanitize_filename(file.filename, manufacturing_dir)
+        if not safe_filename.lower().endswith(".csv"):
+            raise HTTPException(
+                status_code=400,
+                detail="Manufacturing ingestion currently supports CSV files only.",
+            )
+
+        relative_path = Path("manufacturing") / safe_filename
+        file_path = manufacturing_dir / safe_filename
+
+        existing_doc_data = await rag.doc_status.get_doc_by_file_path(
+            relative_path.as_posix()
+        )
+
+        def _get_existing(field: str, default: Any = None) -> Any:
+            if isinstance(existing_doc_data, dict):
+                return existing_doc_data.get(field, default)
+            return getattr(existing_doc_data, field, default) if existing_doc_data else default
+
+        if existing_doc_data and not allow_reimport:
+            track_id = _get_existing("track_id", "")
+            return InsertResponse(
+                status="duplicated",
+                message=(
+                    f"Document '{safe_filename}' already exists. "
+                    "Set allow_reimport=true to re-ingest."
+                ),
+                track_id=track_id,
+            )
+
+        existing_metadata: Dict[str, Any] = {}
+        if existing_doc_data:
+            metadata_value = _get_existing("metadata", {})
+            if isinstance(metadata_value, dict):
+                existing_metadata = metadata_value
+
+        existing_row_checksums: Optional[Dict[int, str]] = None
+        if allow_reimport and existing_doc_data:
+            raw_checksums = existing_metadata.get("row_checksums") or {}
+            if not raw_checksums:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Cannot re-import document because previous row checksums "
+                        "were not recorded."
+                    ),
+                )
+            existing_row_checksums = {}
+            for key, value in raw_checksums.items():
+                try:
+                    idx = int(key)
+                except (TypeError, ValueError):
+                    continue
+                if isinstance(value, str):
+                    existing_row_checksums[idx] = value
+
+        try:
+            file_bytes = await file.read()
+            file_path.write_bytes(file_bytes)
+        except Exception as e:
+            logger.error(f"Failed to store uploaded manufacturing file: {e}")
+            raise HTTPException(status_code=500, detail="Failed to store uploaded file")
+        finally:
+            await file.close()
+
+        try:
+            ingest_result = ingest_csv(
+                file_path,
+                doc_type=canonical_doc_type,
+                import_batch=batch_value,
+                allow_reimport=allow_reimport,
+                existing_row_checksums=existing_row_checksums,
+            )
+        except IngestionError as exc:
+            logger.warning(f"Manufacturing ingestion failed validation: {exc}")
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            logger.error(f"Unexpected manufacturing ingestion error: {exc}")
+            logger.error(traceback.format_exc())
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to ingest manufacturing document.",
+            ) from exc
+
+        file_path_key = relative_path.as_posix()
+        custom_kg, _ = build_manufacturing_custom_kg(ingest_result, file_path_key)
+
+        try:
+            await rag.ainsert_custom_kg(custom_kg, full_doc_id=ingest_result.document.doc_id)
+        except Exception as exc:
+            logger.error(f"Failed to persist manufacturing ingestion result: {exc}")
+            logger.error(traceback.format_exc())
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to store manufacturing ingestion results.",
+            ) from exc
+
+        raw_text: str
+        try:
+            raw_text = file_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            raw_text = file_bytes.decode("utf-8", errors="ignore")
+
+        chunk_ids: List[str] = []
+        for chunk in custom_kg["chunks"]:
+            sanitized = sanitize_text_for_encoding(chunk["content"])
+            chunk_id = compute_mdhash_id(sanitized, prefix="chunk-")
+            if chunk_id not in chunk_ids:
+                chunk_ids.append(chunk_id)
+
+        existing_chunk_list = _get_existing("chunks_list", []) or []
+        if not isinstance(existing_chunk_list, list):
+            existing_chunk_list = []
+        chunk_list: List[str] = list(existing_chunk_list)
+        for chunk_id in chunk_ids:
+            if chunk_id not in chunk_list:
+                chunk_list.append(chunk_id)
+        chunk_count = len(chunk_list)
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+        created_at = _get_existing("created_at", now_iso) or now_iso
+        track_id = _get_existing("track_id") or generate_track_id("manufacturing")
+
+        combined_metadata = dict(existing_metadata)
+        combined_metadata.update(
+            {
+                "doc_type": ingest_result.document.doc_type,
+                "filename": ingest_result.document.filename,
+                "import_batch": ingest_result.document.import_batch,
+                "row_checksums": {
+                    str(index): checksum
+                    for index, checksum in ingest_result.row_checksums.items()
+                },
+                "skipped_rows": ingest_result.skipped_rows,
+                "row_count": len(ingest_result.row_checksums),
+                "manufacturing_ingest": True,
+                "allow_reimport": allow_reimport,
+                "last_ingest_at": now_iso,
+                "new_rows_ingested": len(ingest_result.normalized_rows),
+            }
+        )
+
+        full_doc_payload = {
+            ingest_result.document.doc_id: {
+                "content": raw_text,
+                "file_path": file_path_key,
+            }
+        }
+
+        status_payload = {
+            "status": DocStatus.PROCESSED,
+            "content_summary": get_content_summary(raw_text),
+            "content_length": len(raw_text),
+            "created_at": created_at,
+            "updated_at": now_iso,
+            "file_path": file_path_key,
+            "track_id": track_id,
+            "chunks_count": chunk_count,
+            "chunks_list": chunk_list,
+            "metadata": combined_metadata,
+        }
+
+        try:
+            await rag.full_docs.upsert(full_doc_payload)
+            await rag.doc_status.upsert({ingest_result.document.doc_id: status_payload})
+            await rag._insert_done()
+        except Exception as exc:
+            logger.error(f"Failed to update manufacturing document status: {exc}")
+            logger.error(traceback.format_exc())
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to update manufacturing document state.",
+            ) from exc
+
+        new_rows_count = len(ingest_result.normalized_rows)
+        skipped_count = len(ingest_result.skipped_rows)
+        if new_rows_count and skipped_count:
+            message = (
+                f"Ingested {new_rows_count} new rows from '{safe_filename}'. "
+                f"Skipped {skipped_count} existing rows."
+            )
+        elif new_rows_count:
+            message = f"Ingested {new_rows_count} rows from '{safe_filename}'."
+        else:
+            message = (
+                f"No new rows ingested for '{safe_filename}'. "
+                "Existing data is up to date."
+            )
+
+        return InsertResponse(status="success", message=message, track_id=track_id)
 
     @router.post(
         "/text", response_model=InsertResponse, dependencies=[Depends(combined_auth)]
