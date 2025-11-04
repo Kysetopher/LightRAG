@@ -15,6 +15,14 @@ import {
   DialogTitle,
   DialogTrigger
 } from '@/components/ui/Dialog'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/Select'
 import { errorMessage } from '@/lib/utils'
 import { UploadIcon } from 'lucide-react'
 
@@ -34,6 +42,7 @@ export default function UploadManufacturingDocumentsDialog({
   const [isUploading, setIsUploading] = useState(false)
   const [progresses, setProgresses] = useState<Record<string, number>>({})
   const [fileErrors, setFileErrors] = useState<Record<string, string>>({})
+  const [docType, setDocType] = useState('control_plan')
 
   const handleRejectedFiles = useCallback(
     (rejectedFiles: FileRejection[]) => {
@@ -97,7 +106,7 @@ export default function UploadManufacturingDocumentsDialog({
 
             const uploadResult = await uploadManufacturingDocument(
               file,
-              {},
+              { docType },
               (percentCompleted) => {
                 setProgresses((pre) => ({
                   ...pre,
@@ -173,7 +182,7 @@ export default function UploadManufacturingDocumentsDialog({
         setIsUploading(false)
       }
     },
-    [setIsUploading, setProgresses, setFileErrors, t, onDocumentsUploaded]
+    [docType, setIsUploading, setProgresses, setFileErrors, t, onDocumentsUploaded]
   )
 
   return (
@@ -186,6 +195,7 @@ export default function UploadManufacturingDocumentsDialog({
         if (!nextOpen) {
           setProgresses({})
           setFileErrors({})
+          setDocType('control_plan')
         }
         setOpen(nextOpen)
       }}
@@ -209,6 +219,38 @@ export default function UploadManufacturingDocumentsDialog({
             {t('documentPanel.uploadDocuments.manufacturing.description')}
           </DialogDescription>
         </DialogHeader>
+        <div className="mt-4 space-y-2">
+          <label
+            htmlFor="manufacturing_doc_type"
+            className="text-sm font-medium text-foreground"
+          >
+            {t('documentPanel.uploadDocuments.manufacturing.planTypeLabel')}
+          </label>
+          <Select value={docType} onValueChange={setDocType}>
+            <SelectTrigger
+              id="manufacturing_doc_type"
+              className="h-9 w-full text-left [&>span]:truncate"
+            >
+              <SelectValue placeholder={t('documentPanel.uploadDocuments.manufacturing.planTypePlaceholder')} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="control_plan">
+                  {t('documentPanel.uploadDocuments.manufacturing.planTypeOptions.control_plan')}
+                </SelectItem>
+                <SelectItem value="process_flow">
+                  {t('documentPanel.uploadDocuments.manufacturing.planTypeOptions.process_flow')}
+                </SelectItem>
+                <SelectItem value="fmea">
+                  {t('documentPanel.uploadDocuments.manufacturing.planTypeOptions.fmea')}
+                </SelectItem>
+                <SelectItem value="ppap">
+                  {t('documentPanel.uploadDocuments.manufacturing.planTypeOptions.ppap')}
+                </SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </div>
         <FileUploader
           accept={CSV_ACCEPT}
           maxFileCount={Infinity}

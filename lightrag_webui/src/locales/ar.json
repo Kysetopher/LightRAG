@@ -118,7 +118,15 @@
         "tooltip": "رفع مستندات التحكم التصنيعية بصيغة CSV",
         "title": "رفع مستند تحكم تصنيعي",
         "description": "اسحب وأفلت مستندات التحكم بصيغة CSV أو انقر للتصفح.",
-        "fileTypes": "ملفات CSV فقط (.csv)"
+        "fileTypes": "ملفات CSV فقط (.csv)",
+        "planTypeLabel": "نوع المستند",
+        "planTypePlaceholder": "اختر نوع المستند",
+        "planTypeOptions": {
+          "control_plan": "خطة التحكم",
+          "process_flow": "تدفق العملية",
+          "fmea": "FMEA",
+          "ppap": "PPAP"
+        }
       }
     },
     "documentManager": {

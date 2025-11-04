@@ -118,7 +118,15 @@
         "tooltip": "Upload manufacturing control CSV documents",
         "title": "Upload Manufacturing Control Document",
         "description": "Drag and drop manufacturing control CSV documents or click to browse.",
-        "fileTypes": "CSV files only (.csv)"
+        "fileTypes": "CSV files only (.csv)",
+        "planTypeLabel": "Document type",
+        "planTypePlaceholder": "Select document type",
+        "planTypeOptions": {
+          "control_plan": "Control Plan",
+          "process_flow": "Process Flow",
+          "fmea": "FMEA",
+          "ppap": "PPAP"
+        }
       }
     },
     "documentManager": {

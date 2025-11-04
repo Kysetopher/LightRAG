@@ -118,7 +118,15 @@
         "tooltip": "Téléverser des documents de contrôle manufacturier au format CSV",
         "title": "Téléverser un document de contrôle manufacturier",
         "description": "Glissez-déposez des documents de contrôle CSV ou cliquez pour parcourir.",
-        "fileTypes": "Fichiers CSV uniquement (.csv)"
+        "fileTypes": "Fichiers CSV uniquement (.csv)",
+        "planTypeLabel": "Type de document",
+        "planTypePlaceholder": "Sélectionner le type de document",
+        "planTypeOptions": {
+          "control_plan": "Plan de contrôle",
+          "process_flow": "Flux de processus",
+          "fmea": "AMDE (FMEA)",
+          "ppap": "PPAP"
+        }
       }
     },
     "documentManager": {
