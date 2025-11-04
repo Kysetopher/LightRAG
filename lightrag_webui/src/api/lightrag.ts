@@ -630,6 +630,43 @@ export const uploadDocument = async (
   return response.data
 }
 
+export type ManufacturingUploadOptions = {
+  docType?: string
+  importBatch?: string
+  allowReimport?: boolean
+}
+
+export const uploadManufacturingDocument = async (
+  file: File,
+  {
+    docType = 'control_plan',
+    importBatch = new Date().toISOString(),
+    allowReimport = false
+  }: ManufacturingUploadOptions = {},
+  onUploadProgress?: (percentCompleted: number) => void
+): Promise<DocActionResponse> => {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('doc_type', docType)
+  formData.append('import_batch', importBatch)
+  formData.append('allow_reimport', String(allowReimport))
+
+  const response = await axiosInstance.post('/documents/manufacturing_ingest', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    },
+    // prettier-ignore
+    onUploadProgress:
+      onUploadProgress !== undefined
+        ? (progressEvent) => {
+          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total!)
+          onUploadProgress(percentCompleted)
+        }
+        : undefined
+  })
+  return response.data
+}
+
 export const batchUploadDocuments = async (
   files: File[],
   onUploadProgress?: (fileName: string, percentCompleted: number) => void
@@ -639,6 +676,24 @@ export const batchUploadDocuments = async (
       return await uploadDocument(file, (percentCompleted) => {
         onUploadProgress?.(file.name, percentCompleted)
       })
+    })
+  )
+}
+
+export const batchUploadManufacturingDocuments = async (
+  files: File[],
+  options: ManufacturingUploadOptions = {},
+  onUploadProgress?: (fileName: string, percentCompleted: number) => void
+): Promise<DocActionResponse[]> => {
+  return await Promise.all(
+    files.map(async (file) => {
+      return await uploadManufacturingDocument(
+        file,
+        options,
+        (percentCompleted) => {
+          onUploadProgress?.(file.name, percentCompleted)
+        }
+      )
     })
   )
 }

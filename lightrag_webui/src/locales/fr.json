@@ -112,6 +112,13 @@
         "removeFile": "Supprimer le fichier",
         "uploadDescription": "Vous pouvez télécharger {{isMultiple ? 'plusieurs' : count}} fichiers (jusqu'à {{maxSize}} chacun)",
         "duplicateFile": "Le nom du fichier existe déjà dans le cache du serveur"
+      },
+      "manufacturing": {
+        "button": "Téléverser un CSV de contrôle",
+        "tooltip": "Téléverser des documents de contrôle manufacturier au format CSV",
+        "title": "Téléverser un document de contrôle manufacturier",
+        "description": "Glissez-déposez des documents de contrôle CSV ou cliquez pour parcourir.",
+        "fileTypes": "Fichiers CSV uniquement (.csv)"
       }
     },
     "documentManager": {
