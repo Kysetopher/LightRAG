@@ -32,7 +32,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple, Set
 
 
 class IngestionError(ValueError):
@@ -289,6 +289,231 @@ class ManufacturingIngestionResult:
     vector_chunks: List[VectorChunk]
     skipped_rows: List[int] = field(default_factory=list)
     row_checksums: Dict[int, str] = field(default_factory=dict)
+
+
+def build_manufacturing_custom_kg(
+    result: ManufacturingIngestionResult, file_path: str
+) -> tuple[Dict[str, Any], Dict[int, str]]:
+    """Convert an ingestion result into a custom KG payload for LightRAG."""
+
+    chunks: List[Dict[str, Any]] = []
+    row_chunk_sources: Dict[int, str] = {}
+
+    for order_index, chunk in enumerate(result.vector_chunks):
+        chunks.append(
+            {
+                "content": chunk.text,
+                "source_id": chunk.chunk_id,
+                "file_path": file_path,
+                "chunk_order_index": order_index,
+            }
+        )
+
+        metadata = chunk.metadata or {}
+        if metadata.get("chunk_type") == "row":
+            row_index = metadata.get("row_index")
+            if isinstance(row_index, int):
+                row_chunk_sources[row_index] = chunk.chunk_id
+
+    entities: Dict[str, Dict[str, Any]] = {}
+    relationships: List[Dict[str, Any]] = []
+    seen_relationships: Set[tuple[str, str, str]] = set()
+
+    def ensure_entity(
+        entity_id: Optional[str],
+        display_name: Optional[str],
+        entity_type: str,
+        description: str,
+        source_id: Optional[str],
+    ) -> None:
+        if not entity_id or not display_name:
+            return
+        if entity_id in entities:
+            return
+        full_description = description
+        if display_name and display_name not in description:
+            full_description = f"{display_name}: {description}" if description else display_name
+        entities[entity_id] = {
+            "entity_name": entity_id,
+            "entity_type": entity_type,
+            "description": full_description,
+            "source_id": source_id or entity_id,
+            "file_path": file_path,
+        }
+
+    def add_relationship(
+        src_id: Optional[str],
+        tgt_id: Optional[str],
+        description: str,
+        keywords: str,
+        source_id: Optional[str],
+    ) -> None:
+        if not src_id or not tgt_id:
+            return
+        key = (src_id, tgt_id, keywords)
+        if key in seen_relationships:
+            return
+        relationships.append(
+            {
+                "src_id": src_id,
+                "tgt_id": tgt_id,
+                "description": description,
+                "keywords": keywords,
+                "source_id": source_id or src_id,
+                "file_path": file_path,
+            }
+        )
+        seen_relationships.add(key)
+
+    for normalized in result.normalized_rows:
+        row_index = normalized.row.row_index
+        chunk_source = row_chunk_sources.get(row_index)
+        metadata = normalized.metadata
+
+        step_field = normalized.get_field("step_name")
+        step_desc_field = normalized.get_field("step_description")
+        step_description = (
+            step_desc_field.raw.strip()
+            if isinstance(step_desc_field.raw, str) and step_desc_field.raw.strip()
+            else "No step description provided"
+        )
+        step_name = step_field.raw or f"Process Step {row_index}"
+        ensure_entity(
+            normalized.step_id,
+            step_name,
+            "ProcessStep",
+            f"Step from {metadata.filename} ({metadata.doc_type}), row {row_index}. {step_description}",
+            chunk_source,
+        )
+
+        char_field = normalized.get_field("characteristic")
+        if char_field.raw:
+            char_description = (
+                char_field.raw if char_field.raw.strip() else "Unnamed characteristic"
+            )
+            ensure_entity(
+                normalized.char_id,
+                char_field.raw,
+                "Characteristic",
+                f"Characteristic observed in {metadata.filename}, row {row_index}: {char_description}",
+                chunk_source,
+            )
+            add_relationship(
+                normalized.step_id,
+                normalized.char_id,
+                f"Process step '{step_name}' manages characteristic '{char_field.raw}'",
+                "manufacturing;characteristic",
+                chunk_source,
+            )
+
+        spec_field = normalized.get_field("spec_text")
+        if normalized.spec_id and (spec_field.raw or normalized.spec_bounds):
+            bounds = []
+            lower = normalized.spec_bounds.get("lower_spec")
+            target = normalized.spec_bounds.get("target_spec")
+            upper = normalized.spec_bounds.get("upper_spec")
+            if lower and lower.raw:
+                bounds.append(f"Lower: {lower.raw}")
+            if target and target.raw:
+                bounds.append(f"Target: {target.raw}")
+            if upper and upper.raw:
+                bounds.append(f"Upper: {upper.raw}")
+            spec_details = "; ".join(bounds)
+            description = spec_field.raw or "Specification"
+            if spec_details:
+                description = f"{description} ({spec_details})"
+            ensure_entity(
+                normalized.spec_id,
+                spec_field.raw or f"Specification {row_index}",
+                "Specification",
+                description,
+                chunk_source,
+            )
+            if normalized.char_id:
+                add_relationship(
+                    normalized.char_id,
+                    normalized.spec_id,
+                    f"Characteristic '{char_field.raw}' follows specification '{spec_field.raw or normalized.spec_id}'",
+                    "manufacturing;specification",
+                    chunk_source,
+                )
+
+        mm_field = normalized.get_field("measurement_method")
+        if normalized.mm_id and mm_field.raw:
+            ensure_entity(
+                normalized.mm_id,
+                mm_field.raw,
+                "MeasurementMethod",
+                f"Measurement method used for row {row_index}: {mm_field.raw}",
+                chunk_source,
+            )
+            add_relationship(
+                normalized.step_id,
+                normalized.mm_id,
+                f"Process step '{step_name}' uses measurement method '{mm_field.raw}'",
+                "manufacturing;measurement",
+                chunk_source,
+            )
+
+        sample_size = normalized.get_field("sample_size").raw or ""
+        sample_freq = normalized.get_field("sample_frequency").raw or ""
+        if normalized.sample_plan_id and (sample_size or sample_freq):
+            sample_description = f"Sample size: {sample_size or 'N/A'}, Frequency: {sample_freq or 'N/A'}"
+            ensure_entity(
+                normalized.sample_plan_id,
+                f"Sample Plan {row_index}",
+                "SamplePlan",
+                sample_description,
+                chunk_source,
+            )
+            add_relationship(
+                normalized.step_id,
+                normalized.sample_plan_id,
+                f"Process step '{step_name}' follows {sample_description.lower()}",
+                "manufacturing;sample_plan",
+                chunk_source,
+            )
+
+        reaction_field = normalized.get_field("reaction_plan")
+        if normalized.reaction_plan_id and reaction_field.raw:
+            ensure_entity(
+                normalized.reaction_plan_id,
+                reaction_field.raw,
+                "ReactionPlan",
+                f"Reaction plan for row {row_index}: {reaction_field.raw}",
+                chunk_source,
+            )
+            add_relationship(
+                normalized.step_id,
+                normalized.reaction_plan_id,
+                f"Process step '{step_name}' triggers reaction '{reaction_field.raw}'",
+                "manufacturing;reaction_plan",
+                chunk_source,
+            )
+
+        resp_field = normalized.get_field("responsibility")
+        if normalized.responsibility_id and resp_field.raw:
+            ensure_entity(
+                normalized.responsibility_id,
+                resp_field.raw,
+                "Responsibility",
+                f"Responsible role for row {row_index}: {resp_field.raw}",
+                chunk_source,
+            )
+            add_relationship(
+                normalized.step_id,
+                normalized.responsibility_id,
+                f"Process step '{step_name}' is owned by '{resp_field.raw}'",
+                "manufacturing;responsibility",
+                chunk_source,
+            )
+
+    custom_kg = {
+        "chunks": chunks,
+        "entities": list(entities.values()),
+        "relationships": relationships,
+    }
+    return custom_kg, row_chunk_sources
 
 
 _BASE_FIELD_ALIASES: Dict[str, Tuple[str, ...]] = {
@@ -779,5 +1004,6 @@ __all__ = [
     "ingest_csv",
     "get_document_schema",
     "supported_doc_types",
+    "build_manufacturing_custom_kg",
 ]
 
