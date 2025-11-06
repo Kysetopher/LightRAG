@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import AppRouter from './AppRouter'
+import { AppDataProvider } from '@/contexts/AppDataProvider'
 import './i18n.ts';
 import 'katex/dist/katex.min.css';
 
@@ -9,6 +10,8 @@ import 'katex/dist/katex.min.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <AppRouter />
+    <AppDataProvider>
+      <AppRouter />
+    </AppDataProvider>
   </StrictMode>
 )
