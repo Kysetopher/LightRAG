@@ -684,12 +684,12 @@ export default function RetrievalTesting() {
   }, [t])
 
   return (
-    <div className="flex size-full gap-2 px-2 pb-12 overflow-hidden">
+    <div className="flex size-full gap-2 p-2 pb-12 overflow-hidden">
       <div className="flex grow flex-col gap-4">
         <div className="relative grow">
           <div
             ref={messagesContainerRef}
-            className="bg-primary-foreground/60 absolute inset-0 flex flex-col overflow-auto rounded-lg border p-2"
+            className="bg-primary-foreground/60 absolute inset-0 flex flex-col overflow-auto border p-2"
             onClick={() => {
               if (shouldFollowScrollRef.current) {
                 shouldFollowScrollRef.current = false;
