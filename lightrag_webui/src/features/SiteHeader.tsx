@@ -1,14 +1,10 @@
-import Button from '@/components/ui/Button'
-import { SiteInfo, webuiPrefix } from '@/lib/constants'
-import AppSettings from '@/components/AppSettings'
+
 import { TabsList, TabsTrigger } from '@/components/ui/Tabs'
 import { useSettingsStore } from '@/stores/settings'
-import { useAuthStore } from '@/stores/state'
+
 import { cn } from '@/lib/utils'
 import { useTranslation } from 'react-i18next'
-import { navigationService } from '@/services/navigation'
-import { ZapIcon, GithubIcon, LogOutIcon } from 'lucide-react'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/Tooltip'
+
 
 interface NavigationTabProps {
   value: string
@@ -58,7 +54,6 @@ function TabsNavigation() {
 }
 
 export default function SiteHeader() {
-  const {  webuiTitle, webuiDescription } = useAuthStore()
 
 
   // Check if frontend needs rebuild (apiVersion ends with warning symbol)
