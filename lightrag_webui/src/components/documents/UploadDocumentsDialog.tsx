@@ -193,7 +193,7 @@ export default function UploadDocumentsDialog({ onDocumentsUploaded }: UploadDoc
       }}
     >
       <DialogTrigger asChild>
-        <Button variant="default" side="bottom" tooltip={t('documentPanel.uploadDocuments.tooltip')} size="sm">
+        <Button variant="outline" side="bottom" tooltip={t('documentPanel.uploadDocuments.tooltip')} size="sm">
           <UploadIcon /> {t('documentPanel.uploadDocuments.button')}
         </Button>
       </DialogTrigger>

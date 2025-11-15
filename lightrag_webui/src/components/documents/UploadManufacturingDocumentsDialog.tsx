@@ -202,7 +202,7 @@ export default function UploadManufacturingDocumentsDialog({
     >
       <DialogTrigger asChild>
         <Button
-          variant="default"
+          variant="outline"
           side="bottom"
           tooltip={t('documentPanel.uploadDocuments.manufacturing.tooltip')}
           size="sm"
