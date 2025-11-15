@@ -1116,7 +1116,7 @@ export default function DocumentManager() {
   return (
 
       <div className="p-2 flex-1 flex gap-2 flex-col ">
-        <div className="flex justify-between items-center gap-2 mb-2">
+        <div className="flex justify-between items-center ">
           <div className="flex gap-2">
             <Button
               variant="outline"
