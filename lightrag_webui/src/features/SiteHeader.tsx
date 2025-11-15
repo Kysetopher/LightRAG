@@ -17,8 +17,8 @@ function NavigationTab({ value, currentTab, children }: NavigationTabProps) {
     <TabsTrigger
       value={value}
       className={cn(
-        'cursor-pointer px-2 py-1 transition-all',
-        currentTab === value ? '!bg-emerald-400 !text-zinc-50' : 'hover:bg-background/60'
+        'cursor-pointer  transition-all',
+        currentTab === value ? '!bg-accent !text-zinc-50' : 'hover:text-gray-800'
       )}
     >
       {children}
