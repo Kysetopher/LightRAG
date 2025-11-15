@@ -31,7 +31,7 @@ function TabsNavigation() {
   const { t } = useTranslation()
 
   return (
-    <div className="flex h-8 self-center">
+    <div className="flex self-center">
       <TabsList className="h-full gap-2">
         <NavigationTab value="documents" currentTab={currentTab}>
           {t('header.documents')}
