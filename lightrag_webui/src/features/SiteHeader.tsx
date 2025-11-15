@@ -60,7 +60,7 @@ export default function SiteHeader() {
 
 
   return (
-    <header className="border-border/40 bg-background/95 supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50 flex h-10 w-full border-b px-4 backdrop-blur">
+    <header className="border-border/40  stickyz-50 flex  w-full border-b  backdrop-blur">
 
 
      
