@@ -1191,7 +1191,7 @@ export default function DocumentManager() {
           </div>
         </div>
 
-        <Card className="flex-1 flex flex-col border rounded-md min-h-0 mb-2">
+        <Card >
           <CardHeader className="flex-none py-2 px-4">
             <div className="flex justify-between items-center">
               <CardTitle>{t('documentPanel.documentManager.uploadedTitle')}</CardTitle>
