@@ -1115,7 +1115,7 @@ export default function DocumentManager() {
 
   return (
 
-      <div className="p-2 flex-1 flex gap-2 flex-col ">
+      <div className="p-2 flex-1 h-full flex gap-2 flex-col ">
         <div className="flex justify-between items-center ">
           <div className="flex gap-2">
             <Button
@@ -1191,7 +1191,7 @@ export default function DocumentManager() {
           </div>
         </div>
 
-        <Card >
+        <Card  className="flex-1 flex flex-col min-h-0 ">
           <CardHeader className="flex-none py-2 px-4">
             <div className="flex justify-between items-center">
               <CardTitle>{t('documentPanel.documentManager.uploadedTitle')}</CardTitle>
