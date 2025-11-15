@@ -1114,11 +1114,8 @@ export default function DocumentManager() {
   ]);
 
   return (
-    <Card className="!rounded-none !overflow-hidden flex flex-col h-full min-h-0">
-      <CardHeader className="py-2 px-6">
-        <CardTitle className="text-lg">{t('documentPanel.documentManager.title')}</CardTitle>
-      </CardHeader>
-      <CardContent className="flex-1 flex flex-col min-h-0 overflow-auto">
+
+      <div className="p-2 flex-1 flex gap-2 flex-col ">
         <div className="flex justify-between items-center gap-2 mb-2">
           <div className="flex gap-2">
             <Button
@@ -1476,7 +1473,6 @@ export default function DocumentManager() {
             )}
           </CardContent>
         </Card>
-      </CardContent>
-    </Card>
+    </div>
   )
 }
